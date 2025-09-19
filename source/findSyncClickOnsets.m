@@ -1,4 +1,4 @@
-function [onsets, offsets] = findSyncClickOnsets(audio, fs, threshold, pulse_time, plot_onsets)
+function [onsets, offsets, num_samples] = findSyncClickOnsets(audio, threshold, pulse_time, options)
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % findSyncClickOnsets: Find synchronization "clicks" in audio data
 % usage: onsets = findSyncClickOnsets(audio)
@@ -7,13 +7,20 @@ function [onsets, offsets] = findSyncClickOnsets(audio, fs, threshold, pulse_tim
 % where,
 %    audio is a 1D vector representing an audio signal, or a file path to 
 %       an audio file
-%    fs is the sampling rate of the audio. If audio is a file path, this
-%       may be left as an empty array to use the sampling rate recorded in 
-%       the audio file
 %    threshold is a threshold defining the minimum amplitude for a sync 
 %       click in arbitrary audio input units
 %    pulse_time is the time between the "on" click and the "off" click
+%    Name/Value pairs may include:
+%       SamplingRate: the sampling rate of the audio. If audio is a file 
+%           path, this may be left as an empty array (default) to use the 
+%           sampling rate recorded in the audio file.
+%       Channel: which channel to use if the audio contains more than one.
+%           Default is 1.
+%       PlotOnsets: display detection data in a plot. Default is false.
 %    onsets is a 1D vector of sync click onsets, in units of audio samples
+%    offsets is a 1D vector of sync click offsets, in units of audio 
+%       samples
+%    num_samples is the number of audio samples in the file
 %
 % For post-hoc audio/video synchronization, a simultaneous light/sound 
 %   signal is recorded such that light onsets and "click" onsets can be
@@ -35,11 +42,14 @@ function [onsets, offsets] = findSyncClickOnsets(audio, fs, threshold, pulse_tim
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 arguments
     audio
-    fs double = []
-    threshold (1, 1) double = 1.5
+    threshold (1, 1) double = 0.01
     pulse_time (1, 1) double = 0.08
-    plot_onsets (1, 1) logical = false
+    options.SamplingRate double = []
+    options.Channel (1, 1) double = 1
+    options.PlotOnsets (1, 1) logical = false
 end
+
+fs = options.SamplingRate;
 
 if ischar(audio)
     % Assume this is a path - load the audio
@@ -49,13 +59,21 @@ if ischar(audio)
     end
 end
 
+if size(audio, 2) > 1
+    % Multi-channel audio, select one channel
+    audio = audio(:, options.Channel);
+end
+
+% Calculate number of audio samples in file or vector
+num_samples = length(audio);
+
 % Empirically determined delay between relay deactivation and click sound
 pulse_delay = 0.0035;
 % Adjust pulse time
 pulse_time = pulse_time + pulse_delay;
 % Tolerance for variation in relay turn-off time
 pulse_tolerance = 0.03 * pulse_time;
-% Convert pulse times to sampels
+% Convert pulse times to samples
 pulse_samples = pulse_time * fs;
 pulse_tolerance_samples = pulse_tolerance * fs;
 % Debounce signal such that any repeated onsets spaced closer than half the\
@@ -98,16 +116,17 @@ for k = 1:length(click_starts)-1
     end
 end
 
-if plot_onsets
+if options.PlotOnsets
     figure; 
     ax = axes();
-    plot(ax, audio); 
+    plot(ax, (1:length(audio)) / fs, audio, 'k');
     hold(ax, 'on');
     for onset = onsets
-        plot(ax, [onset, onset], ax.YLim, 'g');
+        plot(ax, onset/fs, 0, 'g*');
     end
     for offset = offsets
-        plot(ax, [offset, offset], ax.YLim, 'r');
+        plot(ax, offset/fs, 0, 'r*');
     end
+    xlabel('time (s)');
     hold(ax, 'off');
 end
