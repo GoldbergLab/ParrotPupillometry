@@ -8,6 +8,8 @@ arguments
     pulse_time double = 0.08
     options.FrameRate double = 30
     options.FileRegex {mustBeText} = '.*\.avi'
+    options.MedianWindow double = [],
+    options.PlotOnsets (1, 1) logical = false
 end
 
 video_files = findFiles(root_directory, options.FileRegex, 'SearchSubdirectories', false);
@@ -16,11 +18,27 @@ num_files = length(video_files);
 % Initialize structure
 flash_struct(num_files) = struct();
 
+cumulative_frames = 0;
+
 for k = 1:num_files
     video_file = video_files{k};
     flash_struct(k).path = video_file;
-    [onsets, offsets, num_frames] = findSyncFlashOnsets(video_file, ROI, threshold, pulse_time, "FrameRate", options.FrameRate);
+    [onsets, offsets, num_frames] = findSyncFlashOnsets( ...
+        video_file, ...
+        ROI, ...
+        threshold, ...
+        pulse_time, ...
+        "FrameRate", options.FrameRate, ...
+        'MedianWindow', options.MedianWindow, ...
+        'PlotOnsets', options.PlotOnsets ...
+        );
     flash_struct(k).onsets = onsets;
     flash_struct(k).offsets = offsets;
+    flash_struct(k).onsets_cumulative = onsets + cumulative_frames;
+    flash_struct(k).offsets_cumulative = offsets + cumulative_frames;
     flash_struct(k).num_frames = num_frames;
+    if options.PlotOnsets
+        drawnow();
+    end
+    cumulative_frames = cumulative_frames + num_frames;
 end

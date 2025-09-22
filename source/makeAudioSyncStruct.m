@@ -12,11 +12,16 @@ num_files = length(audio_files);
 % Initialize structure
 click_struct(num_files) = struct();
 
+cumulative_samples = 0;
+
 for k = 1:num_files
     audio_file = audio_files{k};
     click_struct(k).path = audio_file;
     [onsets, offsets, num_samples] = findSyncClickOnsets(audio_file, threshold, pulse_time, 'Channel', options.Channel);
     click_struct(k).onsets = onsets;
     click_struct(k).offsets = offsets;
+    click_struct(k).onsets_cumulative = onsets + cumulative_samples;
+    click_struct(k).offsets_cumulative = offsets + cumulative_samples;
     click_struct(k).num_samples = num_samples;
+    cumulative_samples = cumulative_samples + num_samples;
 end

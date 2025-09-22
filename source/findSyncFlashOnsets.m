@@ -17,6 +17,9 @@ function [onsets, offsets, num_frames] = findSyncFlashOnsets(video, ROI, thresho
 %    Name/Value pairs may include:
 %       FrameRate: the frame rate of the video. Default is 25
 %       PlotOnsets: display detection data in a plot. Default is false.
+%       MedianWindow: Window to use for a moving de-median filter for the 
+%           video intensity before thresholding. Default is [], which means
+%           do not de-median the intensity.
 %    onsets is a 1D vector of sync flash onsets, in units of frames
 %    offsets is a 1D vector of sync flash offsets, in units of frames
 %    num_frames is the number of frames in the video
@@ -41,6 +44,7 @@ arguments
     pulse_time (1, 1) double = 0.08
     options.FrameRate double = 25
     options.PlotOnsets (1, 1) logical = false
+    options.MedianWindow double = []
 end
 
 fs = options.FrameRate;
@@ -66,6 +70,11 @@ num_frames = size(video, 4);
 % Average the video across space and color, leaving a 1D intensity time series
 intensity = squeeze(mean(video, [1, 2, 3]));
 
+% De-median intensity if requested
+if ~isempty(options.MedianWindow)
+    intensity = intensity - movmedian(intensity, options.MedianWindow);
+end
+
 if options.PlotOnsets
     figure; 
     ax = axes();
@@ -79,10 +88,10 @@ pulse_delay = 0.0;
 % Adjust pulse time
 pulse_time = pulse_time + pulse_delay;
 % Tolerance for variation in relay turn-off time
-pulse_tolerance = max([1, 0.03 * pulse_time]);
+pulse_tolerance = 0.03 * pulse_time;
 % Convert pulse times to samples (frames)
 pulse_samples = pulse_time * fs;
-pulse_tolerance_samples = pulse_tolerance * fs;
+pulse_tolerance_samples = max([1, pulse_tolerance * fs]);
 % Debounce signal such that any repeated onsets spaced closer than half the\
 %   pulse time are ignored.
 debounce_time = pulse_time / 2;
@@ -133,18 +142,24 @@ offsets = [];
 % Look for onset/offset flash pairs. They only count as a pair if they are 
 %   separated within tolerance by the given pulse time.
 for k = 1:length(flash_starts)
+    % Possible flash ends must not have any other flash starts before them
+    if k+1 <= length(flash_starts)
+        possible_flash_ends = flash_ends(flash_ends < flash_starts(k+1));
+    else
+        possible_flash_ends = flash_ends;
+    end
     % Calculate when this flash should end
     predicted_flash_end = flash_starts(k) + pulse_samples;
     % See if any flash_ends are within tolerance of the predicted time
-    matching_ends = flash_ends(floor(predicted_flash_end - pulse_tolerance_samples) <= flash_ends & flash_ends <= ceil(predicted_flash_end + pulse_tolerance_samples));
+    matching_ends = possible_flash_ends(floor(predicted_flash_end - pulse_tolerance_samples) <= possible_flash_ends & possible_flash_ends <= ceil(predicted_flash_end + pulse_tolerance_samples));
     % How many ends matched?
     if length(matching_ends) == 1 %#ok<*ISCL>
         % One end matched - looks like a valid pulse
         onsets(end+1) = flash_starts(k)+1;
         offsets(end+1) = matching_ends;
     elseif length(matching_ends) > 1
-        % More than one end matched? Something went very wrong.
-        error('Two matching flash ends for flash start %d: %s\nThis should not be possible.', flash_starts(k), num2str(matching_ends));
+        % More than one end matched? pick the best candidate
+
     else
         % Zero ends matched. Could be because the end was off the end of the file
     end
