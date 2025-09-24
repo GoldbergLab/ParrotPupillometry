@@ -1,4 +1,4 @@
-function [onsets, offsets, num_samples] = findSyncClickOnsets(audio, threshold, pulse_time, options)
+function [onsets, offsets, num_samples, fs] = findSyncClickOnsets(audio, threshold, pulse_time, options)
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % findSyncClickOnsets: Find synchronization "clicks" in audio data
 % usage: onsets = findSyncClickOnsets(audio)
