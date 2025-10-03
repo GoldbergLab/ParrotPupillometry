@@ -51,8 +51,11 @@ fs = options.FrameRate;
 
 if ischar(video)
     % Assume this is a file path to a video - load it
-    video = fastVideoReader(video, [], [], ROI);
+    path = video;
+    video = fastVideoReader(path, [], [], ROI);
     ROI = [];
+else
+    path = '<unknown>';
 end
 
 if ~isempty(ROI)
@@ -81,13 +84,16 @@ if options.PlotOnsets
     plot(ax, (1:length(intensity)) / fs, intensity, 'k');
     ax.YLim = [0, 255];
     ax.YLimMode = 'manual';
+    ax.Title.Interpreter = 'none';
+    ax.Title.String = abbreviateText(path, 20, 0.2);
 end
 
 % Empirically determined delay between relay deactivation and click sound
 pulse_delay = 0.0;
 % Adjust pulse time
 pulse_time = pulse_time + pulse_delay;
-% Tolerance for variation in relay turn-off time
+% Calculate how much the pulse width can deviate from the predicted pulse 
+%   time without being rejected
 pulse_tolerance = 0.08 * pulse_time;
 pulse_tolerance_samples = max([2, pulse_tolerance * fs]);
 % Convert pulse times to samples (frames)
@@ -173,6 +179,7 @@ if options.PlotOnsets
     for offset = offsets
         plot(ax, offset/fs, intensity(offset), 'r*');
     end
+    plot(ax, ax.XLim, [threshold, threshold], 'k.-')
     xlabel('time (s)');
     hold(ax, 'off');
 end
