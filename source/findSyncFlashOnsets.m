@@ -88,10 +88,10 @@ pulse_delay = 0.0;
 % Adjust pulse time
 pulse_time = pulse_time + pulse_delay;
 % Tolerance for variation in relay turn-off time
-pulse_tolerance = 0.03 * pulse_time;
+pulse_tolerance = 0.08 * pulse_time;
+pulse_tolerance_samples = max([2, pulse_tolerance * fs]);
 % Convert pulse times to samples (frames)
 pulse_samples = pulse_time * fs;
-pulse_tolerance_samples = max([1, pulse_tolerance * fs]);
 % Debounce signal such that any repeated onsets spaced closer than half the\
 %   pulse time are ignored.
 debounce_time = pulse_time / 2;
