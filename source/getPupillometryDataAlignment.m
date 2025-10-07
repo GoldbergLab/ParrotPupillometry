@@ -1,27 +1,42 @@
-%function alignment = getPupillometryDataAlignment(root)
+function [sync_struct, click_struct, naneye_flash_struct, webcam_flash_struct] = ...
+    getPupillometryDataAlignment(root, options)
+arguments
+    root
+    options.ClickStruct = []
+    options.NaneyeFlashStruct = []
+    options.WebcamFlashStruct = []
+end
 
-if ~exist("click_struct", 'var')
+click_struct = options.ClickStruct;
+naneye_flash_struct = options.NaneyeFlashStruct;
+webcam_flash_struct = options.WebcamFlashStruct;
+
+if isempty(click_struct)
     disp('Finding audio clicks...')
     click_struct = makeAudioSyncStruct(root, 0.03, 0.08, "Channel", 1);
     disp('...done')
 end
 
-if ~exist("naneye_flash_struct", 'var')
+if isempty(naneye_flash_struct)
     disp('finding naneye flashes...')
     naneye_flash_struct = makeVideoSyncStruct( ...
         root, ...
         [200, 1, 50, 50], ...
-        20, ...
+        0.5, ...
         0.08, ...
         'FrameRate', 48, ...
         'FileRegex', '_naneye.*\.avi', ...
         'MedianWindow', 20, ...
+        'RangeBasedThreshold', true, ...
         'PlotOnsets', false ...
         );
     disp('...done')
+    naneye_flash_struct = addDroppedFramesToFlashStruct(naneye_flash_struct, 256);
+    naneye_flash_struct = cullSpuriousFlashes(naneye_flash_struct, click_struct);
+    naneye_flash_struct = addMissingFlashes(naneye_flash_struct, click_struct);
 end
 
-if ~exist("webcam_flash_struct", 'var')
+if isempty(webcam_flash_struct)
     disp('finding webcam flashes...')
     webcam_flash_struct = makeVideoSyncStruct( ...
         root, ...
@@ -30,71 +45,148 @@ if ~exist("webcam_flash_struct", 'var')
         0.08, ...
         'FrameRate', 45, ...
         'FileRegex', '_camera.*\.avi', ...
-        'PlotOnsets', true ...
+        'PlotOnsets', false ...
         );
     disp('...done')
+    webcam_flash_struct = cullSpuriousFlashes(webcam_flash_struct, click_struct);
+    webcam_flash_struct = addMissingFlashes(webcam_flash_struct, click_struct);
 end
-
-naneye_flash_struct = addDroppedFramesToFlashStruct(naneye_flash_struct, 256);
 
 sync_struct = struct();
-sync_count = 0;
-cumulative_samples = 0;
 
-if length(unique([click_struct.fs])) > 1
-    error('Multiple audio sampling rates found in this dataset.')
+% Get sync click registration
+sync_count = 1;
+file_start_sample = 1;
+for file_idx = 1:length(click_struct)
+    if file_idx > 1
+        file_start_sample = file_start_sample + click_struct(file_idx-1).num_samples;
+    end
+    for onset_idx = 1:length(click_struct(file_idx).onsets)
+        sync_struct(sync_count).pulse_idx = sync_count;
+        sync_struct(sync_count).pulse_time = click_struct(file_idx).onsets_cumulative(onset_idx) / click_struct(file_idx).fs;
+        sync_struct(sync_count).audio_file = click_struct(file_idx).path;
+        sync_struct(sync_count).audio_file_start_sample = file_start_sample;
+        sync_struct(sync_count).audio_fs = click_struct(file_idx).fs;
+        sync_struct(sync_count).audio_num_samples = click_struct(file_idx).num_samples;
+        sync_struct(sync_count).click_idx = onset_idx;
+        sync_struct(sync_count).click_onset = click_struct(file_idx).onsets(onset_idx);
+        sync_struct(sync_count).click_onset_cumulative = click_struct(file_idx).onsets_cumulative(onset_idx);
+        sync_count = sync_count + 1;
+    end
 end
+num_audio_clicks = sync_count;
 
-audio_fs = click_struct(1).fs;
-
-min_possible_naneye_fps = 20;
-max_possible_naneye_fps = 60;
-
-audioToNaneyeScale = fuzzyMatchEvents( ...
-    [click_struct.onsets_cumulative], ...
-    [naneye_flash_struct.onsets_cumulative], ...
-    audio_fs/max_possible_naneye_fps, ...  % Min possible scale
-    audio_fs/min_possible_naneye_fps ...  % Max possible scale
-    );
-
-click_period = mean(diff([click_struct.onsets_cumulative]));
-average_naneye_fps = audio_fs / audioToNaneyeScale;
-average_naneye_spf = 1/average_naneye_fps;
-naneye_flash_period = click_period * (average_naneye_fps / audio_fs);
-max_naneye_deviation = naneye_flash_period * 0.15;
-first_naneye_flash = naneye_flash_struct(1).onsets_cumulative(1);
-
-naneye_flash_struct_corrected = naneye_flash_struct;
-% Reconstruct theoretical naneye flash times
-for file_idx = 1:length(naneye_flash_struct_corrected)
-    invalid_flash_idx = [];
-    for onset_idx = 1:length(naneye_flash_struct_corrected(file_idx).onsets)
-        flash_frame = naneye_flash_struct_corrected(file_idx).onsets_cumulative(onset_idx) - first_naneye_flash;
-        corrected_flash_frame = naneye_flash_period * round((flash_frame) / naneye_flash_period);
-        fprintf('%f ==> %.01f == %dth flash (%f)\n', flash_frame, corrected_flash_frame, round((flash_frame) / naneye_flash_period), abs(flash_frame - corrected_flash_frame));
-        % Is corrected flash frame close, or is this a spurious flash
-        if abs(flash_frame - corrected_flash_frame) > max_naneye_deviation
-            fprintf('deviation is %f, it is not real!\n', abs(flash_frame - corrected_flash_frame))
-            invalid_flash_idx(end+1) = onset_idx;
+% Add naneye flash registration
+sync_count = 1;
+file_start_sample = 1;
+for file_idx = 1:length(naneye_flash_struct)
+    if file_idx > 1
+        file_start_sample = file_start_sample + naneye_flash_struct(file_idx-1).num_frames;
+    end
+    for onset_idx = 1:length(naneye_flash_struct(file_idx).onsets)
+        sync_struct(sync_count).naneye_file = naneye_flash_struct(file_idx).path;
+        sync_struct(sync_count).naneye_file_start_sample = file_start_sample;
+        sync_struct(sync_count).naneye_flash_onset = naneye_flash_struct(file_idx).onsets(onset_idx);
+        sync_struct(sync_count).naneye_flash_onset_cumulative = naneye_flash_struct(file_idx).onsets_cumulative(onset_idx);
+        sync_struct(sync_count).naneye_num_frames = naneye_flash_struct(file_idx).num_frames;
+        sync_struct(sync_count).naneye_missing = naneye_flash_struct(file_idx).missing(onset_idx);
+        sync_struct(sync_count).naneye_drop_info = naneye_flash_struct(file_idx).drop_info;  % This will sometimes be repeated, but it's ok
+        sync_count = sync_count + 1;
+        if sync_count >= num_audio_clicks
+            break;
         end
     end
-    naneye_flash_struct_corrected(file_idx).onsets(invalid_flash_idx) = [];
-    naneye_flash_struct_corrected(file_idx).offsets(invalid_flash_idx) = [];
-    naneye_flash_struct_corrected(file_idx).onsets_cumulative(invalid_flash_idx) = [];
-    naneye_flash_struct_corrected(file_idx).offsets_cumulative(invalid_flash_idx) = [];
+    if sync_count >= num_audio_clicks
+        break;
+    end
+end
+
+% Add webcam flash registration
+sync_count = 1;
+file_start_sample = 1;
+for file_idx = 1:length(webcam_flash_struct)
+    if file_idx > 1
+        file_start_sample = file_start_sample + webcam_flash_struct(file_idx-1).num_frames;
+    end
+    for onset_idx = 1:length(webcam_flash_struct(file_idx).onsets)
+        sync_struct(sync_count).webcam_file = webcam_flash_struct(file_idx).path;
+        sync_struct(sync_count).webcam_file_start_sample = file_start_sample;
+        sync_struct(sync_count).webcam_flash_onset = webcam_flash_struct(file_idx).onsets(onset_idx);
+        sync_struct(sync_count).webcam_flash_onset_cumulative = webcam_flash_struct(file_idx).onsets_cumulative(onset_idx);
+        sync_struct(sync_count).webcam_num_frames = webcam_flash_struct(file_idx).num_frames;
+        sync_struct(sync_count).webcam_missing = webcam_flash_struct(file_idx).missing(onset_idx);
+        sync_count = sync_count + 1;
+        if sync_count >= num_audio_clicks
+            break;
+        end
+    end
+    if sync_count >= num_audio_clicks
+        break;
+    end
 end
 
 
-% Get sync/click registration
-for audio_file_idx = 1:length(click_struct)
-    for onset_num = 1:length(click_struct(audio_file_idx).onsets)
-        sync_count = sync_count + 1;
-        sync_struct(sync_count).audio_file = click_struct(audio_file_idx).path;
-        sync_struct(sync_count).pulse_idx = onset_num;
-        sync_struct(sync_count).pulse_onset = click_struct(audio_file_idx).onsets(onset_num);
-        sync_struct(sync_count).pulse_onset_cumulative = click_struct(audio_file_idx).onsets(onset_num) + cumulative_samples;
-        % Find corresponding webcam sync pulses
+% Calculate instantaneous webcam and naneye frame rates based on inter pulse intervals
+for pulse_idx = 1:length(sync_struct)
 
+    this_pulse_time = sync_struct(pulse_idx).pulse_time;
+    this_naneye_sample = sync_struct(pulse_idx).naneye_flash_onset_cumulative;
+    this_webcam_sample = sync_struct(pulse_idx).webcam_flash_onset_cumulative;
+
+    if pulse_idx > 1
+        prev_pulse_time = sync_struct(pulse_idx-1).pulse_time;
+        prev_naneye_sample = sync_struct(pulse_idx-1).naneye_flash_onset_cumulative;
+        prev_webcam_sample = sync_struct(pulse_idx-1).webcam_flash_onset_cumulative;
+
+        prev_dt = this_pulse_time - prev_pulse_time;
+
+        prev_naneye_fs = (this_naneye_sample - prev_naneye_sample) / prev_dt;
+        prev_webcam_fs = (this_webcam_sample - prev_webcam_sample) / prev_dt;
+    else
+        prev_naneye_fs = nan;
+        prev_webcam_fs = nan;
     end
-    cumulative_samples = cumulative_samples + click_struct(audio_file_idx).num_samples;
+
+    if pulse_idx < length(sync_struct)
+        next_pulse_time = sync_struct(pulse_idx+1).pulse_time;
+        next_naneye_sample = sync_struct(pulse_idx+1).naneye_flash_onset_cumulative;
+        next_webcam_sample = sync_struct(pulse_idx+1).webcam_flash_onset_cumulative;
+
+        next_dt = next_pulse_time - this_pulse_time;
+
+        next_naneye_fs = (next_naneye_sample - this_naneye_sample) / next_dt;
+        next_webcam_fs = (next_webcam_sample - this_webcam_sample) / next_dt;
+    else
+        next_naneye_fs = nan;
+        next_webcam_fs = nan;
+    end
+
+    if isnan(prev_naneye_fs) || isnan(next_naneye_fs)
+        if isnan(prev_naneye_fs) && isnan(next_naneye_fs)
+            error('Could not calculate any frame rate for pulse #%d', pulse_idx);
+        end
+        if isnan(prev_naneye_fs)
+            % No previous value
+            sync_struct(pulse_idx).naneye_fs = next_naneye_fs;
+            sync_struct(pulse_idx).webcam_fs = next_webcam_fs;
+
+            sync_struct(pulse_idx).naneye_fs_variation = nan;
+            sync_struct(pulse_idx).webcam_fs_variation = nan;
+        elseif isnan(next_naneye_fs)
+            % No next value
+            sync_struct(pulse_idx).naneye_fs = prev_naneye_fs;
+            sync_struct(pulse_idx).webcam_fs = prev_webcam_fs;
+
+            sync_struct(pulse_idx).naneye_fs_variation = nan;
+            sync_struct(pulse_idx).webcam_fs_variation = nan;
+        end
+    else
+        % Both values present
+        sync_struct(pulse_idx).naneye_fs = mean([prev_naneye_fs, next_naneye_fs]);
+        sync_struct(pulse_idx).webcam_fs = mean([prev_webcam_fs, next_webcam_fs]);
+
+        sync_struct(pulse_idx).naneye_fs_variation = abs(prev_naneye_fs - next_naneye_fs);
+        sync_struct(pulse_idx).webcam_fs_variation = abs(prev_webcam_fs - next_webcam_fs);
+    end
+
 end

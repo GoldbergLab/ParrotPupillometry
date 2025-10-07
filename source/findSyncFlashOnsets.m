@@ -20,6 +20,10 @@ function [onsets, offsets, num_frames] = findSyncFlashOnsets(video, ROI, thresho
 %       MedianWindow: Window to use for a moving de-median filter for the 
 %           video intensity before thresholding. Default is [], which means
 %           do not de-median the intensity.
+%       RangeBasedThreshold: Interpret "threshold" as a fraction of the max
+%           intensity in this video. For example, if the max intensity is
+%           60, threshold is 0.5, and RangeBasedThreshold is true, the
+%           actual applied threshold is 30.
 %    onsets is a 1D vector of sync flash onsets, in units of frames
 %    offsets is a 1D vector of sync flash offsets, in units of frames
 %    num_frames is the number of frames in the video
@@ -45,6 +49,7 @@ arguments
     options.FrameRate double = 25
     options.PlotOnsets (1, 1) logical = false
     options.MedianWindow double = []
+    options.RangeBasedThreshold (1, 1) logical = false
 end
 
 fs = options.FrameRate;
@@ -78,10 +83,15 @@ if ~isempty(options.MedianWindow)
     intensity = intensity - movmedian(intensity, options.MedianWindow);
 end
 
+% Convert range-based threshold to absolute threshold
+if options.RangeBasedThreshold
+    threshold = threshold * max(intensity);
+end
+
 if options.PlotOnsets
     figure; 
     ax = axes();
-    plot(ax, (1:length(intensity)) / fs, intensity, 'k');
+    plot(ax, (1:length(intensity)), intensity, 'k');
     ax.YLim = [0, 255];
     ax.YLimMode = 'manual';
     ax.Title.Interpreter = 'none';
@@ -104,7 +114,7 @@ debounce_time = pulse_time / 2;
 % Convert debounce time to audio samples
 debounce_samples = debounce_time * fs;
 
-flash_rising_edges = find(diff(abs(intensity) > threshold)>0);
+flash_rising_edges = find(diff(intensity > threshold)>0);
 flash_starts = [];
 
 % In case there was an flash start right before the start of the file
@@ -174,10 +184,10 @@ end
 if options.PlotOnsets
     hold(ax, 'on');
     for onset = onsets
-        plot(ax, onset/fs, intensity(onset), 'g*');
+        plot(ax, onset, intensity(onset), 'g*');
     end
     for offset = offsets
-        plot(ax, offset/fs, intensity(offset), 'r*');
+        plot(ax, offset, intensity(offset), 'r*');
     end
     plot(ax, ax.XLim, [threshold, threshold], 'k.-')
     xlabel('time (s)');

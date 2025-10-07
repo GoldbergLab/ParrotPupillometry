@@ -58,8 +58,10 @@ for k = 1:length(flash_struct)
         end
 
         % Create fields for drop-corrected onsets and offsets
-        flash_struct(k).onsets_cumulative_corrected = flash_struct(k).onsets_cumulative;
-        flash_struct(k).offsets_cumulative_corrected = flash_struct(k).offsets_cumulative;
+        flash_struct(k).onsets_cumulative_original = flash_struct(k).onsets_cumulative;
+        flash_struct(k).offsets_cumulative_original = flash_struct(k).offsets_cumulative;
+        flash_struct(k).onsets_original = flash_struct(k).onsets;
+        flash_struct(k).offsets_original = flash_struct(k).offsets;
 
         % Get the cumulative number of dropped frames for each drop event
         num_dropped_cumulative = cumsum([flash_struct(k).drop_info.num_dropped]);
@@ -70,20 +72,23 @@ for k = 1:length(flash_struct)
             previous_drop_idx = find([flash_struct(k).drop_info.frame_num] <= flash_struct(k).onsets_cumulative(onset_idx));
             if ~isempty(previous_drop_idx)
                 % If there was a drop event before this flash onset (within this video), calculate the cumulative # of drops to adjust by
-                drop_shift = num_dropped_cumulative(previous_drop_idx(end)) + cumulative_drops;
+                drop_shift = num_dropped_cumulative(previous_drop_idx(end));
             else
                 % No drops before this flash onset, zero adjustment
                 drop_shift = 0;
             end
             % Calculate corrected onset frame using cumulative drops within this video, and cumulative drops in all previous videos
-            flash_struct(k).onsets_cumulative_corrected(onset_idx) = flash_struct(k).onsets_cumulative_corrected(onset_idx) + drop_shift + cumulative_drops;
-            flash_struct(k).offsets_cumulative_corrected(onset_idx) = flash_struct(k).offsets_cumulative_corrected(onset_idx) + drop_shift + cumulative_drops;
+            flash_struct(k).onsets_cumulative(onset_idx) = flash_struct(k).onsets_cumulative(onset_idx) + drop_shift + cumulative_drops;
+            flash_struct(k).offsets_cumulative(onset_idx) = flash_struct(k).offsets_cumulative(onset_idx) + drop_shift + cumulative_drops;
+            flash_struct(k).onsets(onset_idx) = flash_struct(k).onsets(onset_idx) + drop_shift;
+            flash_struct(k).offsets(onset_idx) = flash_struct(k).offsets(onset_idx) + drop_shift;
         end
         % Add on drops from this video to the overal cumulative drop count
         cumulative_drops = cumulative_drops + num_dropped_cumulative(end);
     else
         % No drops in this video, just adjust by number of cumulative drops from previous videos
-        flash_struct(k).onsets_cumulative_corrected = flash_struct(k).onsets_cumulative + cumulative_drops;
-        flash_struct(k).offsets_cumulative_corrected = flash_struct(k).offsets_cumulative + cumulative_drops;
+        flash_struct(k).onsets_cumulative = flash_struct(k).onsets_cumulative + cumulative_drops;
+        flash_struct(k).offsets_cumulative = flash_struct(k).offsets_cumulative + cumulative_drops;
     end
+    flash_struct(k).num_frames = flash_struct(k).num_frames + num_dropped_cumulative(end);
 end

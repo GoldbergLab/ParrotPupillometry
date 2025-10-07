@@ -10,6 +10,7 @@ arguments
     options.FileRegex {mustBeText} = '.*\.avi'
     options.MedianWindow double = [],
     options.PlotOnsets (1, 1) logical = false
+    options.RangeBasedThreshold (1, 1) logical = false
 end
 
 video_files = findFiles(root_directory, options.FileRegex, 'SearchSubdirectories', false);
@@ -30,13 +31,15 @@ for k = 1:num_files
         pulse_time, ...
         "FrameRate", options.FrameRate, ...
         'MedianWindow', options.MedianWindow, ...
-        'PlotOnsets', options.PlotOnsets ...
+        'PlotOnsets', options.PlotOnsets, ...
+        'RangeBasedThreshold', options.RangeBasedThreshold ...
         );
     flash_struct(k).onsets = onsets;
     flash_struct(k).offsets = offsets;
     flash_struct(k).onsets_cumulative = onsets + cumulative_frames;
     flash_struct(k).offsets_cumulative = offsets + cumulative_frames;
     flash_struct(k).num_frames = num_frames;
+    flash_struct(k).ROI = ROI;
     if options.PlotOnsets
         drawnow();
     end
