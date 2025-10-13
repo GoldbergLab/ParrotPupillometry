@@ -24,7 +24,7 @@ video_data_combiner = @(data1, data2)cat(4, data1, data2);
 
 % Output loop:
 % Loop over the pulses, skipping by # of pulse periods per file
-for pulse_idx = 1:pulse_periods_per_file:5 %length(sync_struct)
+for pulse_idx = 1:pulse_periods_per_file:length(sync_struct)
     fprintf('PULSE IDX: %d of %d\n', pulse_idx, length(sync_struct))
     end_pulse_idx = pulse_idx + pulse_periods_per_file;
     if end_pulse_idx > length(sync_struct)
