@@ -1,5 +1,54 @@
 function [sync_struct, click_struct, naneye_flash_struct, webcam_flash_struct] = ...
     getPupillometryDataAlignment(root, options)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% getPupillometryDataAlignment: Extract synchronization info from data
+% usage: [sync_struct, click_struct, naneye_flash_struct, 
+%   webcam_flash_struct] = getPupillometryDataAlignment(root, options)
+%
+% where,
+%    root is the root folder in which to look for audio and video files
+%    Name/Value options can include:
+%       ClickStruct: A previously created click_struct, if you want to 
+%           avoid recalculating it. Default is [], meaning a new one will 
+%           be created
+%       NaneyeFlashStruct A previously created naneye_flash_struct, if you 
+%           want to avoid recalculating it. Default is [], meaning a new 
+%           one will be created
+%       WebcamFlashStruct = A previously created webcam_flahs_struct, if 
+%           you want to avoid recalculating it. Default is [], meaning a 
+%           new one will be created
+%       NaneyeNumIgnoredPulses: Number of initial naneye sync pulses to
+%           ignore. Use this if the naneye camera recorded one or more sync
+%           pulses at the beginning of a session that the webcam and 
+%           microphone did not start soon enough to capture. Default is 0
+%       WebcamNumIgnoredPulses = Number of initial webcam sync pulses to
+%           ignore. Use this if the webcam camera recorded one or more sync
+%           pulses at the beginning of a session that the naneye and 
+%           microphone did not start soon enough to capture. Default is 0
+%       AudioNumIgnoredPulses = Number of initial audio sync pulses to
+%           ignore. Use this if the microphone recorded one or more sync
+%           pulses at the beginning of a session that the webcam and 
+%           naneye did not start soon enough to capture. Default is 0
+%    sync_struct is a structure containing comprehensive synchronization
+%       information about the three data streams. Can be used by 
+%       alignVideosToAudio
+%    click_struct contains the intermediate audio-only sync info
+%    naneye_flash_struct contains the intermediate naneye-only sync info
+%    webcam_flash_struct contains the intermediate webcam-only sync info
+%
+% This function takes three un-aligned streams - audio, webcam, and naneye,
+%   and uses a common sync signal (simultaneous flashes and clicks) to
+%   detect how the three streams are aligned. The main output is the
+%   sync_struct, which can be passed to alignVideosToAudio to execute the
+%   post-hoc alignment of the three data streams
+%
+% See also: alignVideosToAudio
+%
+% Version: 1.0
+% Author:  Brian Kardon
+% Email:   bmk27=cornell*org, brian*kardon=google*com
+% Real_email = regexprep(Email,{'=','*'},{'@','.'})
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 arguments
     root
     options.ClickStruct = []
