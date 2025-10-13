@@ -11,6 +11,7 @@ arguments
     options.MedianWindow double = [],
     options.PlotOnsets (1, 1) logical = false
     options.RangeBasedThreshold (1, 1) logical = false
+    options.NumIgnoredFlashes = 0
 end
 
 video_files = findFiles(root_directory, options.FileRegex, 'SearchSubdirectories', false);
@@ -34,6 +35,17 @@ for k = 1:num_files
         'PlotOnsets', options.PlotOnsets, ...
         'RangeBasedThreshold', options.RangeBasedThreshold ...
         );
+    if options.NumIgnoredFlashes > 0
+        if length(onsets) <= options.NumIgnoredFlashes
+            onsets = [];
+            offsets = [];
+            options.NumIgnoredFlashes = options.NumIgnoredFlashes - length(onsets);
+        else
+            onsets(1:options.NumIgnoredFlashes) = [];
+            offsets(1:options.NumIgnoredFlashes) = [];
+            options.NumIgnoredFlashes = 0;
+        end
+    end
     flash_struct(k).onsets = onsets;
     flash_struct(k).offsets = offsets;
     flash_struct(k).onsets_cumulative = onsets + cumulative_frames;

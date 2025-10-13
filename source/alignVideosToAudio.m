@@ -1,83 +1,317 @@
-function alignVideosToAudio(sync_struct, aligned_folder)
-
-% Get a list of all audio paths
-audio_paths = sort(unique({sync_struct.audio_file}));
-
-% Initialize a structure holding the information about what to actually do to the videos
-naneye_job_struct = struct();
-webcam_job_struct = struct();
-
-% Loop over audio files
-for output_file_idx = 1:length(audio_paths)
-    % Current audio file path
-    audio_path = audio_paths{output_file_idx};
-
-    % Determine which pulses occur in this audio file
-    pulse_idx = find(strcmp(audio_path, {sync_struct.audio_file}));
-    if any(diff(pulse_idx) ~= 1)
-        error('something is wrong with audio file path order in sync_struct')
-    end
-
-    % Get sync sub-struct for first pulse in this audio file
-    first_pulse = sync_struct(pulse_idx(1));
-
-    % Get the offset in seconds between the start of the audio file and the first pulse
-    first_pulse_offset_time = first_pulse.pulse_time - first_pulse.audio_file_start_sample / first_pulse.audio_fs;
-
-    % Get cumulative sample (frame) that corresponds to the start of the audio file
-    naneye_start_sample = round(first_pulse.naneye_flash_onset_cumulative - first_pulse_offset_time * first_pulse.naneye_fs);
-    webcam_start_sample = round(first_pulse.webcam_flash_onset_cumulative - first_pulse_offset_time * first_pulse.webcam_fs);
-
-    % Determine # of video samples (frames) that occur during this audio file
-    naneye_num_samples = first_pulse.naneye_fs * first_pulse.audio_num_samples / first_pulse.audio_fs;
-    webcam_num_samples = first_pulse.webcam_fs * first_pulse.audio_num_samples / first_pulse.audio_fs;
-
-    % Get cumulative sample (frame) that corresponds to the end of the audio file
-    naneye_end_sample = naneye_start_sample + naneye_num_samples - 1;
-    webcam_end_sample = webcam_start_sample + webcam_num_samples - 1;
-
-    % Find sync index for the video files that contain the beginning of the audio file
-    naneye_start_idx = find([sync_struct.naneye_file_start_sample] <= naneye_start_sample, 1, "last");
-    webcam_start_idx = find([sync_struct.webcam_file_start_sample] <= webcam_start_sample, 1, "last");
-
-    % Find sync index for the video files that contain the end of the audio file
-    naneye_end_idx = find([sync_struct.naneye_file_start_sample] <= naneye_start_sample + naneye_num_samples, 1, "last");
-    webcam_end_idx = find([sync_struct.webcam_file_start_sample] <= webcam_start_sample + webcam_num_samples, 1, "last");
-
-    % Construct the range of sync indices covering the audio file for 
-    naneye_idx_range = naneye_start_idx:naneye_end_idx;
-    webcam_idx_range = webcam_start_idx:webcam_end_idx;
-
-    % Set up the job parameters
-    % Set up the job parameters
-    naneye_job_struct(output_file_idx).files = sort(unique({sync_struct(naneye_idx_range).naneye_file}));
-    naneye_job_struct(output_file_idx).fs = mean([sync_struct(naneye_idx_range).naneye_fs]);
-    naneye_job_struct(output_file_idx).delta_fs = max([sync_struct(naneye_idx_range).naneye_fs_variation], [], 'omitnan');
-    naneye_job_struct(output_file_idx).first_file_start_frame = naneye_start_sample - sync_struct(naneye_start_idx).naneye_file_start_sample + 1;
-    naneye_job_struct(output_file_idx).last_file_end_frame =    naneye_end_sample - sync_struct(naneye_end_idx).naneye_file_start_sample + 1;
-
-    % Set up the job parameters
-    webcam_job_struct(output_file_idx).files = sort(unique({sync_struct(webcam_idx_range).webcam_file}));
-    webcam_job_struct(output_file_idx).fs = mean([sync_struct(webcam_idx_range).webcam_fs]);
-    webcam_job_struct(output_file_idx).delta_fs = max([sync_struct(webcam_idx_range).webcam_fs_variation], [], 'omitnan');
-    webcam_job_struct(output_file_idx).first_file_start_frame = webcam_start_sample - sync_struct(webcam_start_idx).webcam_file_start_sample + 1;
-    webcam_job_struct(output_file_idx).last_file_end_frame =    webcam_end_sample - sync_struct(webcam_end_idx).webcam_file_start_sample + 1;
+function alignVideosToAudio(sync_struct, aligned_folder, options)
+arguments
+    sync_struct struct
+    aligned_folder
+    options.AudioChannel = 1
+    options.PulsesPerFile = 1;
 end
 
-file_cache = containers.Map();
+% # of sync pulse periods that should be included in each output file
+pulse_periods_per_file = options.PulsesPerFile;
 
-for output_file_idx = 1:length(naneye_job_struct)
-    for source_file_idx = 1:length(naneye_job_struct(output_file_idx).files)
-        source_file_path = naneye_job_struct(output_file_idx).files{source_file_idx};
-        if file_cache.isKey(source_file_path)
-            % We've already loaded this file, get data from cache
-            video_data = file_cache(source_file_path);
+% Initialize file cache
+[~, file_cache] = cacheLoadFile();
+
+% Define utility functions
+audio_loader = @audioread;
+audio_data_slicer = @(data, start, stop)data(start:stop, :);
+audio_data_sizer = @(data)size(data, 1);
+audio_data_combiner = @(data1, data2)[data1; data2];
+video_loader = @(path)fastVideoReader(path);
+video_data_slicer = @(data, start, stop)data(:, :, :, start:stop);
+video_data_sizer = @(data)size(data, 4);
+video_data_combiner = @(data1, data2)cat(4, data1, data2);
+
+% Output loop:
+% Loop over the pulses, skipping by # of pulse periods per file
+for pulse_idx = 1:pulse_periods_per_file:5 %length(sync_struct)
+    fprintf('PULSE IDX: %d of %d\n', pulse_idx, length(sync_struct))
+    end_pulse_idx = pulse_idx + pulse_periods_per_file;
+    if end_pulse_idx > length(sync_struct)
+        % Just drop the final data files if theyt don't have the full # of 
+        % pulses in them, not worth the hassle to make a partial end file
+        break;
+    end
+
+    % Get the rows of the sync struct relevant to these sync pulses
+    sync_struct_segment = sync_struct(pulse_idx:end_pulse_idx);
+    audio_data = [];
+    naneye_data = [];
+    webcam_data = [];
+
+    audio_index_info = [];
+    naneye_index_info = [];
+    webcam_index_info = [];
+
+    % Loop over pulse periods to include in this output file
+    for idx = 1:pulse_periods_per_file
+        % Extract information from this pulse and the next one, because files
+        %   likely span multiple pulse periods
+        % Audio file paths:
+        this_path = sync_struct_segment(idx).audio_file;
+        next_path = sync_struct_segment(idx+1).audio_file;
+        % Click onsets:
+        this_onset = sync_struct_segment(idx).click_onset;
+        next_onset = sync_struct_segment(idx+1).click_onset;
+        % Drop info
+        this_drop_info = [];
+        next_drop_info = [];
+        % Gather data for this pulse period
+        [audio_data_piece, audio_index_info_piece, ~] = ...
+            collect_pulse_period_data(this_path, next_path, this_drop_info, next_drop_info, this_onset, next_onset, file_cache, audio_loader, audio_data_slicer, audio_data_sizer, audio_data_combiner, [], 'MaxCacheSize', 9);
+
+        % Naneye file paths
+        this_path = sync_struct_segment(idx).naneye_file;
+        next_path = sync_struct_segment(idx+1).naneye_file;
+        % Flash onsets
+        this_onset = sync_struct_segment(idx).naneye_flash_onset;
+        next_onset = sync_struct_segment(idx+1).naneye_flash_onset;
+        % Drop info
+        this_drop_info = sync_struct_segment(idx).naneye_drop_info;
+        next_drop_info = sync_struct_segment(idx+1).naneye_drop_info;
+        % Gather data for this pulse period
+        [naneye_data_piece, naneye_index_info_piece, naneye_filled_piece] = ...
+            collect_pulse_period_data(this_path, next_path, this_drop_info, next_drop_info, this_onset, next_onset, file_cache, video_loader, video_data_slicer, video_data_sizer, video_data_combiner, @fillInDroppedFrames, 'MaxCacheSize', 9);
+
+        % Webcam file paths
+        this_path = sync_struct_segment(idx).webcam_file;
+        next_path = sync_struct_segment(idx+1).webcam_file;
+        % Flash onsets
+        this_onset = sync_struct_segment(idx).webcam_flash_onset;
+        next_onset = sync_struct_segment(idx+1).webcam_flash_onset;
+        % Drop info
+        this_drop_info = [];
+        next_drop_info = [];
+        % Gather data for this pulse period
+        [webcam_data_piece, webcam_index_info_piece, ~] = ...
+            collect_pulse_period_data(this_path, next_path, this_drop_info, next_drop_info, this_onset, next_onset, file_cache, video_loader, video_data_slicer, video_data_sizer, video_data_combiner, [], 'MaxCacheSize', 9);
+
+        % Combine this new pulse data with data from prior pulses, if any
+        audio_data = audio_data_combiner(audio_data, audio_data_piece);
+        naneye_data = video_data_combiner(naneye_data, naneye_data_piece);
+        webcam_data = video_data_combiner(webcam_data, webcam_data_piece);
+
+        % Combine this new index data with data from prior pulses, if any
+        audio_index_info = [audio_index_info, audio_index_info_piece]; %#ok<*AGROW>
+        naneye_index_info = [naneye_index_info, naneye_index_info_piece];
+        webcam_index_info = [webcam_index_info, webcam_index_info_piece];
+    end
+
+    naneye_data = reorientNaneyeVideo(naneye_data);
+
+    mean_audio_fs = mean([sync_struct_segment.audio_fs]);
+    mean_naneye_fs = mean([sync_struct_segment.naneye_fs]);
+    mean_webcam_fs = mean([sync_struct_segment.webcam_fs]);
+
+    pulse_tag = sprintf('pulse%04d_', pulse_idx);
+
+    [~, name, ext] = fileparts(sync_struct_segment(1).audio_file);
+    audio_output_path = fullfile(aligned_folder, [pulse_tag, name, ext]);
+    audiowrite(audio_output_path, audio_data, mean_audio_fs);
+
+    [~, name, ext] = fileparts(sync_struct_segment(1).naneye_file);
+    naneye_output_path = fullfile(aligned_folder, [pulse_tag, name, ext]);
+    saveVideoData(naneye_data, naneye_output_path, 'Motion JPEG AVI', mean_naneye_fs);
+
+    [~, name, ext] = fileparts(sync_struct_segment(1).webcam_file);
+    webcam_output_path = fullfile(aligned_folder, [pulse_tag, name, ext]);
+    saveVideoData(webcam_data, webcam_output_path, 'Motion JPEG AVI', mean_webcam_fs);
+
+end
+
+
+function [collected_data, index_info, collected_filled] = collect_pulse_period_data(this_path, next_path, this_drop_info, next_drop_info, this_onset, next_onset, cache, loader, data_slicer, data_sizer, data_combiner, data_drop_fixer, options)
+arguments
+    this_path char
+    next_path char
+    this_drop_info
+    next_drop_info
+    this_onset double
+    next_onset double
+    cache
+    loader
+    data_slicer 
+    data_sizer 
+    data_combiner 
+    data_drop_fixer 
+    options.MaxCacheSize = 9
+    options.Debug = false
+end
+if options.Debug
+    disp('LOADING PULSE PERIOD DATA')
+end
+
+% Load initial file
+data = cacheLoadFile(this_path, loader, cache, 'MaxLength', options.MaxCacheSize);
+
+% If data has drops, fix the drops here, and save info about where the drops are
+if ~isempty(this_drop_info)
+    [data, filled] = data_drop_fixer(data, this_drop_info);
+else
+    collected_filled = [];
+end
+
+% Pulse period starts at pulse onset, of course
+start_sample = this_onset;
+
+if strcmp(this_path, next_path)
+    % Whole pulse period is contained within this file
+    end_sample = next_onset-1;
+else
+    % Pulse period spans two files
+    end_sample = data_sizer(data);
+end
+
+% Slice data from pulse start to whichever end sample is appropriate
+collected_data = data_slicer(data, start_sample, end_sample);
+% Collect info about how data was sliced for posterity
+index_info = struct();
+index_info.path = this_path;
+index_info.start_sample = start_sample;
+index_info.end_sample = end_sample;
+if options.Debug
+    [~, name, ext] = fileparts(this_path);
+    fprintf('Loading %06d - %06d from %s\n', start_sample, end_sample, [name, ext]);
+end
+
+% If data has drops, fix the drops here, and save info about where the drops are
+if ~isempty(this_drop_info)
+    collected_filled = filled(start_sample:end_sample);
+end
+
+if ~strcmp(this_path, next_path)
+    % Pulse period spans two files - load second file chunk
+    data2 = cacheLoadFile(next_path, loader, cache, 'MaxLength', options.MaxCacheSize);
+    if ~isempty(next_drop_info)
+        [data2, filled2] = data_drop_fixer(data, next_drop_info);
+    end
+
+    % Start chunk at the beginning of file 2
+    start_sample = 1;
+    % And just before next pulse onset
+    end_sample = next_onset-1;
+    % Slice data from start of file 2 to just before next onset
+    next_collected_data = data_slicer(data2, start_sample, end_sample);
+    % Combine the previous slice with this one
+    collected_data = data_combiner(collected_data, next_collected_data);
+    % Combine filled info too
+    if ~isempty(next_drop_info)
+        collected_filled = [collected_filled, filled2(start_sample, end_sample)];
+    end
+    % Collect info about how data was sliced for posterity
+    index_info(2).path = next_path;
+    index_info(2).start_sample = start_sample;
+    index_info(2).end_sample = end_sample;
+    if options.Debug
+        [~, name, ext] = fileparts(this_path);
+        fprintf('Loading %06d - %06d from %s\n', start_sample, end_sample, [name, ext]);
+    end
+end
+
+% 
+%         % Duplicate previous frame to fill in dropped frames
+%         video_data_fixed(:, :, :, chunk_end_fixed+1:chunk_start_fixed-1) = repmat(video_data(:, :, :, source_frame), 1, 1, 1, drop_info(drop_idx).num_dropped);
+%         filled(chunk_end_fixed+1:chunk_start_fixed-1) = true;
+%         % fprintf('Filling %d:%d from %d x %d\n', chunk_end_fixed+1, chunk_start_fixed-1, source_frame, drop_info(drop_idx).num_dropped);
+%     end
+% end
+
+function [video_data_fixed, filled] = fillInDroppedFrames(video_data, drop_info)
+video_size = size(video_data);
+num_frames = video_size(4);
+video_size_fixed = video_size;
+num_frames_fixed = num_frames + sum([drop_info.num_dropped]);
+video_size_fixed(4) = num_frames_fixed;
+video_data_fixed = zeros(video_size_fixed, class(video_data));
+drop_spots = [1, [drop_info.frame_num], num_frames+1];
+
+filled = false(1, num_frames_fixed);
+
+chunk_start_fixed = 1;
+for drop_idx = 1:length(drop_info)+1
+    % Identify start/end of consecutive frames (with no interceding drops)
+    chunk_start = drop_spots(drop_idx);
+    chunk_end = (drop_spots(drop_idx+1) - 1);
+    % Calculate length of chunk
+    chunk_size = chunk_end-chunk_start+1;
+    % Calculate the end of the chunk in fixed frame numbers
+    chunk_end_fixed = chunk_start_fixed + chunk_size - 1;
+    % Copy consecutive chunk into output array
+    video_data_fixed(:, :, :, chunk_start_fixed:chunk_end_fixed) = video_data(:, :, :, chunk_start:chunk_end);
+    % fprintf('Copying %d:%d to %d:%d\n', chunk_start, chunk_end, chunk_start_fixed, chunk_end_fixed);
+    if drop_idx <= length(drop_info)
+        % Calculate start of next chunk in fixed frame numbers
+        chunk_start_fixed = chunk_end_fixed + drop_info(drop_idx).num_dropped + 1;
+        % Handle edge case of first frame getting duplicated
+        if chunk_end == 0
+            source_frame = 1;
         else
-            % New file, load it and cache it
-            video_data = loadVideoData(source_file_path);
-            file_cache(source_file_path) = video_data;
+            source_frame = chunk_end;
         end
-        
-
+        % Duplicate previous frame to fill in dropped frames
+        video_data_fixed(:, :, :, chunk_end_fixed+1:chunk_start_fixed-1) = repmat(video_data(:, :, :, source_frame), 1, 1, 1, drop_info(drop_idx).num_dropped);
+        filled(chunk_end_fixed+1:chunk_start_fixed-1) = true;
+        % fprintf('Filling %d:%d from %d x %d\n', chunk_end_fixed+1, chunk_start_fixed-1, source_frame, drop_info(drop_idx).num_dropped);
     end
 end
+
+function newVideoData = reorientNaneyeVideo(videoData)
+w = size(videoData, 2);
+h = size(videoData, 1);
+n = size(videoData, 4);
+
+newW = 2 * w;
+newH = h / 2;
+
+newVideoData = zeros([newH, newW, 3, n], class(videoData));
+newVideoData(:, 1:w, :, :) = videoData(1:newH, :, :, :);
+newVideoData(:, w+1:end, :, :) = videoData(newH+1:end, :, :, :);
+
+
+function outpath = writeFilledInfo(video_path, filled)
+%WRITEFILLEDINFO Write JSON file listing filled frame numbers.
+%
+%   outpath = writeFilledInfo(video_path, filled)
+%
+% Creates a JSON file next to the given video file that contains
+% only an array of frame numbers that were filled (duplicated).
+%
+% Example output file contents:
+%   [3,4,10,11,12,27]
+%
+% INPUTS
+%   video_path : string or char
+%       Path to the video file (e.g. 'C:\data\trial1.avi')
+%   filled : logical or numeric vector
+%       Vector with true/1 for filled frames.
+%
+% OUTPUT
+%   outpath : string
+%       Full path to the JSON file written.
+
+    if ~isvector(filled)
+        error('Input "filled" must be a 1-D vector.');
+    end
+
+    [folder, name, ~] = fileparts(video_path);
+    if isempty(folder)
+        folder = pwd;
+    end
+
+    outpath = fullfile(folder, [name '_filled.json']);
+
+    % Find indices of filled frames
+    filled_frames = find(filled(:));
+
+    % Encode as pretty JSON array
+    json_str = jsonencode(filled_frames, 'PrettyPrint', true);
+
+    % Write to file
+    fid = fopen(outpath, 'w');
+    if fid == -1
+        error('Could not open %s for writing.', outpath);
+    end
+    fwrite(fid, json_str, 'char');
+    fclose(fid);
+
+    fprintf('Wrote filled frame list to: %s\n', outpath);

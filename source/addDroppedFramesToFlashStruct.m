@@ -7,6 +7,9 @@ end
 % Keep track of cumulative drops between videos
 cumulative_drops = 0;
 
+% Keep track of # of missing videos detected, so we don't have an offset in drop frame number
+missing_videos = [];
+
 % Loop over each video
 for k = 1:length(flash_struct)
     % Construct expected dropped frame file path
@@ -30,6 +33,29 @@ for k = 1:length(flash_struct)
                 last_ID = vals(3);
                 this_ID = vals(4);
 
+                if isempty(missing_videos)
+                    % Check if there seems to be missing files
+                    missing_videos = 0;
+                    num_samples_per_file = unique([flash_struct.num_frames]);
+                    if ~isscalar(num_samples_per_file)
+                        % Files do not all have same length
+                        if min(num_samples_per_file) > frame_num
+                            % Ok, multiple possible samples per file, and 
+                            % the first frame num is greater than the 
+                            % minimum, so there could be missing files
+                            error('Initial video(s) seem to be missing, and files are not uniform in length - cannot compensate.')
+                        else
+                            % Doesn't seem like files are missing, we're good
+                        end
+                    else
+                        % All files have same length
+                        if frame_num > num_samples_per_file
+                            missing_videos = floor(frame_num / num_samples_per_file);
+                            warning('Found evidence of %d missing videos in dropped frame info - adjusting frame drops.', missing_videos);
+                        end
+                    end
+                end
+
                 % Calculate number of dropped frames in this record
                 num_dropped = this_ID - last_ID - 1;
 
@@ -49,7 +75,8 @@ for k = 1:length(flash_struct)
                 jj = j - wraps;
 
                 % Record drop info in struct
-                flash_struct(k).drop_info(jj).frame_num = frame_num;
+                flash_struct(k).drop_info(jj).frame_num = frame_num - flash_struct(k).num_frames * (k - 1 + missing_videos);
+                flash_struct(k).drop_info(jj).frame_num_cumulative = frame_num - flash_struct(k).num_frames * missing_videos;
                 flash_struct(k).drop_info(jj).frame_time = frame_time;
                 flash_struct(k).drop_info(jj).last_ID = last_ID;
                 flash_struct(k).drop_info(jj).this_ID = this_ID;
