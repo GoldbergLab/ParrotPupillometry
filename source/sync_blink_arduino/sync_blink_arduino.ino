@@ -3,7 +3,7 @@ const int led_pin = 8;
 // How long should each pulse be (ms):
 const long onTime = 80;
 // How long between pulse onsets (ms):
-const int period = 1000*5;
+const int period = 1000*10;
 
 // How long should pulses stay low (calculated):
 const long offTime = period - onTime;
