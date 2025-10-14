@@ -200,7 +200,7 @@ if options.Debug
     fprintf('Loading %06d - %06d from %s\n', start_sample, end_sample, [name, ext]);
 end
 
-% If data has drops, fix the drops here, and save info about where the drops are
+% If data has drops and save info about where the drops are
 if ~isempty(this_drop_info)
     collected_filled = filled(start_sample:end_sample);
 end
@@ -209,7 +209,7 @@ if ~strcmp(this_path, next_path)
     % Pulse period spans two files - load second file chunk
     data2 = cacheLoadFile(next_path, loader, cache, 'MaxLength', options.MaxCacheSize);
     if ~isempty(next_drop_info)
-        [data2, filled2] = data_drop_fixer(data, next_drop_info);
+        [data2, filled2] = data_drop_fixer(data2, next_drop_info);
     end
 
     % Start chunk at the beginning of file 2
