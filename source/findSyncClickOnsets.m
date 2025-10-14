@@ -51,7 +51,7 @@ end
 
 fs = options.SamplingRate;
 
-if ischar(audio)
+if istext(audio)
     % Assume this is a path - load the audio
     [audio, fs_loaded] = audioread(audio);
     if isempty(fs)

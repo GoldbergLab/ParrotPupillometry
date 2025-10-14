@@ -54,7 +54,7 @@ end
 
 fs = options.FrameRate;
 
-if ischar(video)
+if istext(video)
     % Assume this is a file path to a video - load it
     path = video;
     video = fastVideoReader(path, [], [], ROI);
