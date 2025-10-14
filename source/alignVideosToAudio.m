@@ -29,7 +29,7 @@ arguments
     sync_struct struct
     aligned_folder
     options.AudioChannel = 1
-    options.PulsesPerFile = 1;
+    options.PulsesPerFile = 2;
 end
 
 % # of sync pulse periods that should be included in each output file
