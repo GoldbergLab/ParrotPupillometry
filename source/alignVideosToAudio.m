@@ -30,6 +30,7 @@ arguments
     aligned_folder
     options.AudioChannel = 1
     options.PulsesPerFile = 2;
+    options.WriteSourceInfo = true
 end
 
 % # of sync pulse periods that should be included in each output file
@@ -69,6 +70,10 @@ for pulse_idx = 1:pulse_periods_per_file:length(sync_struct)
     naneye_index_info = [];
     webcam_index_info = [];
 
+    audio_filled = [];
+    naneye_filled = [];
+    webcam_filled = [];
+
     % Loop over pulse periods to include in this output file
     for idx = 1:pulse_periods_per_file
         % Extract information from this pulse and the next one, because files
@@ -83,7 +88,7 @@ for pulse_idx = 1:pulse_periods_per_file:length(sync_struct)
         this_drop_info = [];
         next_drop_info = [];
         % Gather data for this pulse period
-        [audio_data_piece, audio_index_info_piece, ~] = ...
+        [audio_data_piece, audio_index_info_piece, audio_filled_piece] = ...
             collect_pulse_period_data(this_path, next_path, this_drop_info, next_drop_info, this_onset, next_onset, file_cache, audio_loader, audio_data_slicer, audio_data_sizer, audio_data_combiner, [], 'MaxCacheSize', 9);
 
         % Naneye file paths
@@ -109,7 +114,7 @@ for pulse_idx = 1:pulse_periods_per_file:length(sync_struct)
         this_drop_info = [];
         next_drop_info = [];
         % Gather data for this pulse period
-        [webcam_data_piece, webcam_index_info_piece, ~] = ...
+        [webcam_data_piece, webcam_index_info_piece, webcam_filled_piece] = ...
             collect_pulse_period_data(this_path, next_path, this_drop_info, next_drop_info, this_onset, next_onset, file_cache, video_loader, video_data_slicer, video_data_sizer, video_data_combiner, [], 'MaxCacheSize', 9);
 
         % Combine this new pulse data with data from prior pulses, if any
@@ -121,6 +126,10 @@ for pulse_idx = 1:pulse_periods_per_file:length(sync_struct)
         audio_index_info = [audio_index_info, audio_index_info_piece]; %#ok<*AGROW>
         naneye_index_info = [naneye_index_info, naneye_index_info_piece];
         webcam_index_info = [webcam_index_info, webcam_index_info_piece];
+
+        audio_filled = [audio_filled, audio_filled_piece];
+        naneye_filled = [naneye_filled, naneye_filled_piece];
+        webcam_filled = [webcam_filled, webcam_filled_piece];
     end
 
     naneye_data = reorientNaneyeVideo(naneye_data);
@@ -134,14 +143,17 @@ for pulse_idx = 1:pulse_periods_per_file:length(sync_struct)
     [~, name, ext] = fileparts(sync_struct_segment(1).audio_file);
     audio_output_path = fullfile(aligned_folder, [pulse_tag, name, ext]);
     audiowrite(audio_output_path, audio_data, mean_audio_fs);
+    if options.WriteSourceInfo; writeSourceInfo(audio_output_path, audio_index_info, audio_filled); end
 
     [~, name, ext] = fileparts(sync_struct_segment(1).naneye_file);
     naneye_output_path = fullfile(aligned_folder, [pulse_tag, name, ext]);
     saveVideoData(naneye_data, naneye_output_path, 'Motion JPEG AVI', mean_naneye_fs);
+    if options.WriteSourceInfo; writeSourceInfo(naneye_output_path, naneye_index_info, naneye_filled); end
 
     [~, name, ext] = fileparts(sync_struct_segment(1).webcam_file);
     webcam_output_path = fullfile(aligned_folder, [pulse_tag, name, ext]);
     saveVideoData(webcam_data, webcam_output_path, 'Motion JPEG AVI', mean_webcam_fs);
+    if options.WriteSourceInfo; writeSourceInfo(webcam_output_path, webcam_index_info, webcam_filled); end
 
 end
 
@@ -174,13 +186,15 @@ data = cacheLoadFile(this_path, loader, cache, 'MaxLength', options.MaxCacheSize
 if ~isempty(this_drop_info)
     [data, filled] = data_drop_fixer(data, this_drop_info);
 else
-    collected_filled = [];
+    filled = false([1, data_sizer(data)]);
 end
 
 % Pulse period starts at pulse onset, of course
 start_sample = this_onset;
 
-if strcmp(this_path, next_path)
+pulse_spans_two_files = ~strcmp(this_path, next_path);
+
+if ~pulse_spans_two_files
     % Whole pulse period is contained within this file
     end_sample = next_onset-1;
 else
@@ -201,15 +215,15 @@ if options.Debug
 end
 
 % If data has drops and save info about where the drops are
-if ~isempty(this_drop_info)
-    collected_filled = filled(start_sample:end_sample);
-end
+collected_filled = filled(start_sample:end_sample);
 
-if ~strcmp(this_path, next_path)
+if  pulse_spans_two_files
     % Pulse period spans two files - load second file chunk
     data2 = cacheLoadFile(next_path, loader, cache, 'MaxLength', options.MaxCacheSize);
     if ~isempty(next_drop_info)
         [data2, filled2] = data_drop_fixer(data2, next_drop_info);
+    else
+        filled2 = false([1, data_sizer(data2)]);
     end
 
     % Start chunk at the beginning of file 2
@@ -221,9 +235,7 @@ if ~strcmp(this_path, next_path)
     % Combine the previous slice with this one
     collected_data = data_combiner(collected_data, next_collected_data);
     % Combine filled info too
-    if ~isempty(next_drop_info)
-        collected_filled = [collected_filled, filled2(start_sample, end_sample)];
-    end
+    collected_filled = [collected_filled, filled2(start_sample, end_sample)];
     % Collect info about how data was sliced for posterity
     index_info(2).path = next_path;
     index_info(2).start_sample = start_sample;
@@ -294,50 +306,25 @@ newVideoData(:, 1:w, :, :) = videoData(1:newH, :, :, :);
 newVideoData(:, w+1:end, :, :) = videoData(newH+1:end, :, :, :);
 
 
-function outpath = writeFilledInfo(video_path, filled)
-%WRITEFILLEDINFO Write JSON file listing filled frame numbers.
-%
-%   outpath = writeFilledInfo(video_path, filled)
-%
-% Creates a JSON file next to the given video file that contains
-% only an array of frame numbers that were filled (duplicated).
-%
-% Example output file contents:
-%   [3,4,10,11,12,27]
-%
-% INPUTS
-%   video_path : string or char
-%       Path to the video file (e.g. 'C:\data\trial1.avi')
-%   filled : logical or numeric vector
-%       Vector with true/1 for filled frames.
-%
-% OUTPUT
-%   outpath : string
-%       Full path to the JSON file written.
+function writeSourceInfo(data_path, index_info, filled)
 
-    if ~isvector(filled)
-        error('Input "filled" must be a 1-D vector.');
-    end
+[folder, name, ~] = fileparts(data_path);
 
-    [folder, name, ~] = fileparts(video_path);
-    if isempty(folder)
-        folder = pwd;
-    end
+info_path = fullfile(folder, [name '_info.json']);
 
-    outpath = fullfile(folder, [name '_filled.json']);
+% Find indices of filled samples/frames
+filled_samples = find(filled(:));
 
-    % Find indices of filled frames
-    filled_frames = find(filled(:));
+source_info.sources = index_info;
+source_info.filled_samples = filled_samples;
 
-    % Encode as pretty JSON array
-    json_str = jsonencode(filled_frames, 'PrettyPrint', true);
+% Encode as pretty JSON array
+json_str = jsonencode(source_info, 'PrettyPrint', true);
 
-    % Write to file
-    fid = fopen(outpath, 'w');
-    if fid == -1
-        error('Could not open %s for writing.', outpath);
-    end
-    fwrite(fid, json_str, 'char');
-    fclose(fid);
-
-    fprintf('Wrote filled frame list to: %s\n', outpath);
+% Write to file
+fid = fopen(info_path, 'w');
+if fid == -1
+    error('Could not open %s for writing.', info_path);
+end
+fwrite(fid, json_str, 'char');
+fclose(fid);
