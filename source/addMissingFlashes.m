@@ -33,7 +33,8 @@ flash_period = flash_period_corrected;
 
 flash_struct_corrected = flash_struct;
 
-last_flash = flash_struct_corrected(1).onsets_cumulative(1);
+last_flash_onset = flash_struct_corrected(1).onsets_cumulative(1);
+last_flash_offset = flash_struct_corrected(1).offsets_cumulative(1);
 
 % Add missing flashes
 for file_idx = 1:length(flash_struct_corrected)
@@ -43,46 +44,54 @@ for file_idx = 1:length(flash_struct_corrected)
         if onset_idx > length(flash_struct_corrected(file_idx).onsets)
             break;
         end
-        flash_frame = flash_struct_corrected(file_idx).onsets_cumulative(onset_idx) - last_flash;
+        flash_frame = flash_struct_corrected(file_idx).onsets_cumulative(onset_idx) - last_flash_onset;
         num_missing_flashes = round((flash_frame) / flash_period) - 1;
         if num_missing_flashes > 0
             % At least one missing flash detected
             for m = 1:num_missing_flashes
                 % Add the missing flashes one by one
                 time_to_missing_flash = round(m * flash_period);
-                missing_flash_frame_onset_cumulative = last_flash + time_to_missing_flash;
-                missing_flash_frame_onset = last_flash + time_to_missing_flash;
-                missing_flash_frame_offset_cumulative = last_flash + time_to_missing_flash;
-                missing_flash_frame_offset = last_flash + time_to_missing_flash;
+                missing_flash_frame_onset_cumulative = last_flash_onset + time_to_missing_flash;
+                [missing_file_idx, missing_file_first_frame, missing_flash_frame_onset] = which_file(flash_struct, onset_frame_cumulative);
+                missing_flash_frame_offset_cumulative = last_flash_offset + time_to_missing_flash;
+                missing_flash_frame_offset = missing_flash_frame_offset_cumulative - missing_file_first_frame + 1;
 
                 disp('*******************************')
                 disp('Add missing flash:')
                 disp(missing_flash_frame_onset_cumulative)
                 disp('')
-                if file_idx > 1
+                if missing_file_idx > 1
                     disp('Previous file:')
-                    disp(flash_struct_corrected(file_idx - 1).onsets_cumulative);
+                    disp(flash_struct_corrected(missing_file_idx - 1).onsets_cumulative);
                 end
                 disp('This file:')
-                disp(flash_struct_corrected(file_idx).onsets_cumulative)
-                if file_idx < length(flash_struct_corrected)
+                disp(flash_struct_corrected(missing_file_idx).onsets_cumulative)
+                if missing_file_idx < length(flash_struct_corrected)
                     disp('Next file:')
-                    disp(flash_struct_corrected(file_idx + 1).onsets_cumulative);
+                    disp(flash_struct_corrected(missing_file_idx + 1).onsets_cumulative);
                 end
                 disp('*******************************')
                 
 
                 % Insert missing flash
-                flash_struct_corrected(file_idx).onsets_cumulative = insertInArray(flash_struct_corrected(file_idx).onsets_cumulative, onset_idx, missing_flash_frame_onset_cumulative);
-                flash_struct_corrected(file_idx).onsets = insertInArray(flash_struct_corrected(file_idx).onsets, onset_idx, missing_flash_frame_onset);
-                flash_struct_corrected(file_idx).offsets_cumulative = insertInArray(flash_struct_corrected(file_idx).offsets_cumulative, onset_idx, missing_flash_frame_offset_cumulative);
-                flash_struct_corrected(file_idx).offsets = insertInArray(flash_struct_corrected(file_idx).offsets, onset_idx, missing_flash_frame_offset);
-                flash_struct_corrected(file_idx).missing = insertInArray(flash_struct_corrected(file_idx).missing, onset_idx, true);
+                flash_struct_corrected(missing_file_idx).onsets_cumulative = insertInArray(flash_struct_corrected(missing_file_idx).onsets_cumulative, onset_idx, missing_flash_frame_onset_cumulative);
+                flash_struct_corrected(missing_file_idx).onsets = insertInArray(flash_struct_corrected(missing_file_idx).onsets, onset_idx, missing_flash_frame_onset);
+                flash_struct_corrected(missing_file_idx).offsets_cumulative = insertInArray(flash_struct_corrected(missing_file_idx).offsets_cumulative, onset_idx, missing_flash_frame_offset_cumulative);
+                flash_struct_corrected(missing_file_idx).offsets = insertInArray(flash_struct_corrected(missing_file_idx).offsets, onset_idx, missing_flash_frame_offset);
+                flash_struct_corrected(missing_file_idx).missing = insertInArray(flash_struct_corrected(missing_file_idx).missing, onset_idx, true);
                 % Adjust onset_idx to account for inserted flash
                 onset_idx = onset_idx + 1;
             end
         end
-        last_flash = flash_struct_corrected(file_idx).onsets_cumulative(onset_idx);
+        last_flash_onset = flash_struct_corrected(file_idx).onsets_cumulative(onset_idx);
+        last_flash_offset = flash_struct_corrected(file_idx).offsets_cumulative(onset_idx);
         onset_idx = onset_idx + 1;
     end
 end
+
+function [file_idx, first_frame, onset_frame] = which_file(flash_struct, onset_frame_cumulative)
+% Which file does the onset frame belong in?
+first_frames = cumsum([1, flash_struct.num_frames]);
+file_idx = find(onset_frame_cumulative > first_frames, 1, 'last');
+first_frame = first_frames(file_idx);
+onset_frame = onset_frame_cumulative - first_frame + 1;
