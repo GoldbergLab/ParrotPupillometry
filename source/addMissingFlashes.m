@@ -27,14 +27,14 @@ flash_period = click_period * (average_fps / audio_fs);
 deltas = diff([flash_struct.onsets_cumulative]);
 deviations = deltas - flash_period * round(deltas / flash_period);
 flash_period_corrected = flash_period + mean(deviations);
-fprintf('Initial flash period estimate: %d\n', flash_period);
-fprintf('Corrected flash period:        %f\n', flash_period_corrected);
+fprintf('Initial flash period estimate: %.02f\n', flash_period);
+fprintf('Corrected flash period:        %.02f\n', flash_period_corrected);
 flash_period = flash_period_corrected;
 
 flash_struct_corrected = flash_struct;
 
-last_flash_onset = flash_struct_corrected(1).onsets_cumulative(1);
-last_flash_offset = flash_struct_corrected(1).offsets_cumulative(1);
+previous_flash_onset = flash_struct_corrected(1).onsets_cumulative(1);
+previous_flash_offset = flash_struct_corrected(1).offsets_cumulative(1);
 
 % Add missing flashes
 for file_idx = 1:length(flash_struct_corrected)
@@ -44,16 +44,16 @@ for file_idx = 1:length(flash_struct_corrected)
         if onset_idx > length(flash_struct_corrected(file_idx).onsets)
             break;
         end
-        flash_frame = flash_struct_corrected(file_idx).onsets_cumulative(onset_idx) - last_flash_onset;
+        flash_frame = flash_struct_corrected(file_idx).onsets_cumulative(onset_idx) - previous_flash_onset;
         num_missing_flashes = round((flash_frame) / flash_period) - 1;
         if num_missing_flashes > 0
             % At least one missing flash detected
             for m = 1:num_missing_flashes
                 % Add the missing flashes one by one
                 time_to_missing_flash = round(m * flash_period);
-                missing_flash_frame_onset_cumulative = last_flash_onset + time_to_missing_flash;
-                [missing_file_idx, missing_file_first_frame, missing_flash_frame_onset] = which_file(flash_struct, onset_frame_cumulative);
-                missing_flash_frame_offset_cumulative = last_flash_offset + time_to_missing_flash;
+                missing_flash_frame_onset_cumulative = previous_flash_onset + time_to_missing_flash;
+                [missing_file_idx, missing_file_first_frame, missing_flash_frame_onset] = which_file(flash_struct, missing_flash_frame_onset_cumulative);
+                missing_flash_frame_offset_cumulative = previous_flash_offset + time_to_missing_flash;
                 missing_flash_frame_offset = missing_flash_frame_offset_cumulative - missing_file_first_frame + 1;
 
                 disp('*******************************')
@@ -81,10 +81,13 @@ for file_idx = 1:length(flash_struct_corrected)
                 flash_struct_corrected(missing_file_idx).missing = insertInArray(flash_struct_corrected(missing_file_idx).missing, onset_idx, true);
                 % Adjust onset_idx to account for inserted flash
                 onset_idx = onset_idx + 1;
+                if onset_idx > length(flash_struct_corrected(file_idx).onsets)
+                    break;
+                end
             end
         end
-        last_flash_onset = flash_struct_corrected(file_idx).onsets_cumulative(onset_idx);
-        last_flash_offset = flash_struct_corrected(file_idx).offsets_cumulative(onset_idx);
+        previous_flash_onset = flash_struct_corrected(file_idx).onsets_cumulative(onset_idx);
+        previous_flash_offset = flash_struct_corrected(file_idx).offsets_cumulative(onset_idx);
         onset_idx = onset_idx + 1;
     end
 end

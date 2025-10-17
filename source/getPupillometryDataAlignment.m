@@ -190,9 +190,9 @@ for file_idx = 1:length(webcam_flash_struct)
 end
 
 % Cut sync struct down to smallest data set length
-num_clicks = [sync_struct.audio_file_idx];
-num_naneye_flashes = [sync_struct.naneye_file_idx];
-num_webcam_flashes = [sync_struct.webcam_file_idx];
+num_clicks = length([sync_struct.audio_file_idx]);
+num_naneye_flashes = length([sync_struct.naneye_file_idx]);
+num_webcam_flashes = length([sync_struct.webcam_file_idx]);
 num_sync_pulses = min([num_clicks, num_naneye_flashes, num_webcam_flashes]);
 sync_struct = sync_struct(1:num_sync_pulses);
 
