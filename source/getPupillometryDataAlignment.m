@@ -126,6 +126,7 @@ for file_idx = 1:length(click_struct)
         sync_struct(sync_count).pulse_idx = sync_count;
         sync_struct(sync_count).pulse_time = click_struct(file_idx).onsets_cumulative(onset_idx) / click_struct(file_idx).fs;
         sync_struct(sync_count).audio_file = click_struct(file_idx).path;
+        sync_struct(sync_count).audio_file_idx = file_idx;
         sync_struct(sync_count).audio_file_start_sample = file_start_sample;
         sync_struct(sync_count).audio_fs = click_struct(file_idx).fs;
         sync_struct(sync_count).audio_num_samples = click_struct(file_idx).num_samples;
@@ -188,6 +189,12 @@ for file_idx = 1:length(webcam_flash_struct)
     end
 end
 
+% Cut sync struct down to smallest data set length
+num_clicks = [sync_struct.audio_file_idx];
+num_naneye_flashes = [sync_struct.naneye_file_idx];
+num_webcam_flashes = [sync_struct.webcam_file_idx];
+num_sync_pulses = min([num_clicks, num_naneye_flashes, num_webcam_flashes]);
+sync_struct = sync_struct(1:num_sync_pulses);
 
 % Calculate instantaneous webcam and naneye frame rates based on inter pulse intervals
 for pulse_idx = 1:length(sync_struct)
