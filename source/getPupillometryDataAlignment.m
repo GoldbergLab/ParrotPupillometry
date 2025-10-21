@@ -57,11 +57,18 @@ arguments
     options.NaneyeNumIgnoredPulses = 0
     options.WebcamNumIgnoredPulses = 0
     options.AudioNumIgnoredPulses = 0
+    options.SaveStructs = true
 end
 
+sync_struct = struct();
 click_struct = options.ClickStruct;
 naneye_flash_struct = options.NaneyeFlashStruct;
 webcam_flash_struct = options.WebcamFlashStruct;
+analysis_date = char(datetime());
+if options.SaveStructs
+    structFile = fullfile(root, 'AlignmentStructs.mat');
+    save(structFile, 'click_struct', 'naneye_flash_struct', 'webcam_flash_struct', 'analysis_date');
+end
 
 if isempty(click_struct)
     disp('Finding audio clicks...')
@@ -74,6 +81,9 @@ if isempty(click_struct)
         options.AudioNumIgnoredPulses ...
         );
     disp('...done')
+    if options.SaveStructs
+        save(structFile, 'click_struct', '-append');
+    end
 end
 
 if isempty(naneye_flash_struct)
@@ -94,6 +104,9 @@ if isempty(naneye_flash_struct)
     naneye_flash_struct = addDroppedFramesToFlashStruct(naneye_flash_struct, 256);
     naneye_flash_struct = cullSpuriousFlashes(naneye_flash_struct, click_struct);
     naneye_flash_struct = addMissingFlashes(naneye_flash_struct, click_struct);
+    if options.SaveStructs
+        save(structFile, 'naneye_flash_struct', '-append');
+    end
 end
 
 if isempty(webcam_flash_struct)
@@ -111,9 +124,10 @@ if isempty(webcam_flash_struct)
     disp('...done')
     webcam_flash_struct = cullSpuriousFlashes(webcam_flash_struct, click_struct);
     webcam_flash_struct = addMissingFlashes(webcam_flash_struct, click_struct);
+    if options.SaveStructs
+        save(structFile, 'webcam_flash_struct', '-append');
+    end
 end
-
-sync_struct = struct();
 
 % Get sync click registration
 sync_count = 1;
@@ -259,4 +273,8 @@ for pulse_idx = 1:length(sync_struct)
         sync_struct(pulse_idx).webcam_fs_variation = abs(prev_webcam_fs - next_webcam_fs);
     end
 
+end
+
+if options.SaveStructs
+    save(structFile, 'sync_struct', '-append');
 end
