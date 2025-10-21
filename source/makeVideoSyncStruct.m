@@ -37,9 +37,9 @@ for k = 1:num_files
         );
     if options.NumIgnoredFlashes > 0
         if length(onsets) <= options.NumIgnoredFlashes
+            options.NumIgnoredFlashes = options.NumIgnoredFlashes - length(onsets);
             onsets = [];
             offsets = [];
-            options.NumIgnoredFlashes = options.NumIgnoredFlashes - length(onsets);
         else
             onsets(1:options.NumIgnoredFlashes) = [];
             offsets(1:options.NumIgnoredFlashes) = [];

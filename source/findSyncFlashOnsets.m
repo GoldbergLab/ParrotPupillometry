@@ -67,8 +67,8 @@ if ~isempty(ROI)
     % If user provides a ROI, crop the video here
     x0 = ROI(1);
     y0 = ROI(2);
-    x1 = x0 + ROI(3);
-    y1 = y0 + ROI(4);
+    x1 = x0 + ROI(3) - 1;
+    y1 = y0 + ROI(4) - 1;
     video = video(y0:y1, x0:x1, :, :);
 end
 
@@ -133,7 +133,7 @@ while true
     debounce_start = flash_rising_edges(1);
 end
 
-flash_falling_edges = find(diff(abs(intensity) > threshold) < 0);
+flash_falling_edges = find(diff(intensity > threshold) < 0);
 flash_ends = [];
 
 % In case there was an flash start right before the start of the file

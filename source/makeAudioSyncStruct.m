@@ -22,9 +22,9 @@ for k = 1:num_files
 
     if options.NumIgnoredClicks > 0
         if length(onsets) <= options.NumIgnoredClicks
+            options.NumIgnoredClicks = options.NumIgnoredClicks - length(onsets);
             onsets = [];
             offsets = [];
-            options.NumIgnoredClicks = options.NumIgnoredClicks - length(onsets);
         else
             onsets(1:options.NumIgnoredClicks) = [];
             offsets(1:options.NumIgnoredClicks) = [];

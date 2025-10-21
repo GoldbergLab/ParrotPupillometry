@@ -52,7 +52,7 @@ for file_idx = 1:length(flash_struct_corrected)
                 % Add the missing flashes one by one
                 time_to_missing_flash = round(m * flash_period);
                 missing_flash_frame_onset_cumulative = previous_flash_onset + time_to_missing_flash;
-                [missing_file_idx, missing_file_first_frame, missing_flash_frame_onset] = which_file(flash_struct, missing_flash_frame_onset_cumulative);
+                [missing_file_idx, missing_file_first_frame, missing_flash_frame_onset] = which_file(flash_struct_corrected, missing_flash_frame_onset_cumulative);
                 missing_flash_frame_offset_cumulative = previous_flash_offset + time_to_missing_flash;
                 missing_flash_frame_offset = missing_flash_frame_offset_cumulative - missing_file_first_frame + 1;
 
@@ -93,8 +93,14 @@ for file_idx = 1:length(flash_struct_corrected)
 end
 
 function [file_idx, first_frame, onset_frame] = which_file(flash_struct, onset_frame_cumulative)
-% Which file does the onset frame belong in?
-first_frames = cumsum([1, flash_struct.num_frames]);
-file_idx = find(onset_frame_cumulative > first_frames, 1, 'last');
-first_frame = first_frames(file_idx);
+% Precompute 1-based first-frame index for each file: length N
+starts = cumsum([1, flash_struct(1:end-1).num_frames]);
+% Assign file where onset_frame_cumulative >= starts(k) and < starts(k)+num_frames(k)
+file_idx = find(onset_frame_cumulative >= starts & ...
+                onset_frame_cumulative <  (starts + [flash_struct.num_frames]), 1, 'first');
+if isempty(file_idx)
+    % clamp to last file if it lands exactly on the last boundary
+    file_idx = numel(flash_struct);
+end
+first_frame = starts(file_idx);
 onset_frame = onset_frame_cumulative - first_frame + 1;
