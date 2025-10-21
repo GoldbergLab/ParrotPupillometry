@@ -90,16 +90,18 @@ for k = 1:length(flash_struct)
         flash_struct(k).onsets_original = flash_struct(k).onsets;
         flash_struct(k).offsets_original = flash_struct(k).offsets;
 
-        % Get the cumulative number of dropped frames for each drop event
+        % Get the cumulative number of dropped frames for each drop event within this video
         num_dropped_cumulative = cumsum([flash_struct(k).drop_info.num_dropped]);
 
+        fprintf('MISSING CORRECTION: **** Video %d\n', k);
+        
         % Loop over flash onsets
         for onset_idx = 1:length(flash_struct(k).onsets_cumulative)
             % Get the index of the most recent drop event before this flash onset
-            previous_drop_idx = find([flash_struct(k).drop_info.frame_num] <= flash_struct(k).onsets_cumulative(onset_idx));
+            previous_drop_idx = find([flash_struct(k).drop_info.frame_num] <= flash_struct(k).onsets(onset_idx), 1, 'last');
             if ~isempty(previous_drop_idx)
                 % If there was a drop event before this flash onset (within this video), calculate the cumulative # of drops to adjust by
-                drop_shift = num_dropped_cumulative(previous_drop_idx(end));
+                drop_shift = num_dropped_cumulative(previous_drop_idx);
             else
                 % No drops before this flash onset, zero adjustment
                 drop_shift = 0;
@@ -109,6 +111,12 @@ for k = 1:length(flash_struct)
             flash_struct(k).offsets_cumulative(onset_idx) = flash_struct(k).offsets_cumulative(onset_idx) + drop_shift + cumulative_drops;
             flash_struct(k).onsets(onset_idx) = flash_struct(k).onsets(onset_idx) + drop_shift;
             flash_struct(k).offsets(onset_idx) = flash_struct(k).offsets(onset_idx) + drop_shift;
+            fprintf('MISSING CORRECTION: ** Onset_idx: %d\n', onset_idx);
+            fprintf('MISSING CORRECTION: previous_drop_idx: %d\n', previous_drop_idx);
+            fprintf('MISSING CORRECTION: drop_shift: %d\n', drop_shift);
+            fprintf('MISSING CORRECTION: cumulative_drops: %d\n', cumulative_drops);
+            fprintf('MISSING CORRECTION: onset correction: %d => %d\n', flash_struct(k).onsets_original(onset_idx), flash_struct(k).onsets(onset_idx));
+            fprintf('MISSING CORRECTION: onset_cumulative correction: %d => %d\n', flash_struct(k).onsets_cumulative_original(onset_idx), flash_struct(k).onsets_cumulative(onset_idx));
         end
         % Add on drops from this video to the overal cumulative drop count
         cumulative_drops = cumulative_drops + num_dropped_cumulative(end);
