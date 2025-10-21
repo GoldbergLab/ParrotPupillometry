@@ -92,7 +92,7 @@ for pulse_idx = 1:pulse_periods_per_file:length(sync_struct)
         next_drop_info = [];
         % Gather data for this pulse period
         [audio_data_piece, audio_index_info_piece, audio_filled_piece] = ...
-            collect_sync_pulse_period_data(this_path, next_path, this_drop_info, next_drop_info, this_onset, next_onset, file_cache, audio_loader, audio_data_slicer, audio_data_sizer, audio_data_combiner, [], 'MaxCacheSize', 9);
+            collect_sync_pulse_period_data(this_path, next_path, this_drop_info, next_drop_info, this_onset, next_onset, file_cache, audio_loader, audio_data_slicer, audio_data_sizer, audio_data_combiner, [], 'DataType', 'audio', 'MaxCacheSize', 9);
 
         % Naneye file paths
         this_path = sync_struct_segment(idx).naneye_file;
@@ -105,7 +105,7 @@ for pulse_idx = 1:pulse_periods_per_file:length(sync_struct)
         next_drop_info = sync_struct_segment(idx+1).naneye_drop_info;
         % Gather data for this pulse period
         [naneye_data_piece, naneye_index_info_piece, naneye_filled_piece] = ...
-            collect_sync_pulse_period_data(this_path, next_path, this_drop_info, next_drop_info, this_onset, next_onset, file_cache, video_loader, video_data_slicer, video_data_sizer, video_data_combiner, @fillInDroppedVideoFrames, 'MaxCacheSize', 9);
+            collect_sync_pulse_period_data(this_path, next_path, this_drop_info, next_drop_info, this_onset, next_onset, file_cache, video_loader, video_data_slicer, video_data_sizer, video_data_combiner, @fillInDroppedVideoFrames, 'DataType', 'video', 'MaxCacheSize', 9);
 
         % Webcam file paths
         this_path = sync_struct_segment(idx).webcam_file;
@@ -118,7 +118,7 @@ for pulse_idx = 1:pulse_periods_per_file:length(sync_struct)
         next_drop_info = [];
         % Gather data for this pulse period
         [webcam_data_piece, webcam_index_info_piece, webcam_filled_piece] = ...
-            collect_sync_pulse_period_data(this_path, next_path, this_drop_info, next_drop_info, this_onset, next_onset, file_cache, video_loader, video_data_slicer, video_data_sizer, video_data_combiner, [], 'MaxCacheSize', 9);
+            collect_sync_pulse_period_data(this_path, next_path, this_drop_info, next_drop_info, this_onset, next_onset, file_cache, video_loader, video_data_slicer, video_data_sizer, video_data_combiner, [], 'DataType', 'video', 'MaxCacheSize', 9);
 
         % Combine this new pulse data with data from prior pulses, if any
         audio_data = audio_data_combiner(audio_data, audio_data_piece);
@@ -159,3 +159,39 @@ for pulse_idx = 1:pulse_periods_per_file:length(sync_struct)
     if options.WriteSourceInfo; writeSourceInfo(webcam_output_path, webcam_index_info, webcam_filled); end
 
 end
+
+function newVideoData = reorientNaneyeVideo(videoData)
+w = size(videoData, 2);
+h = size(videoData, 1);
+n = size(videoData, 4);
+
+newW = 2 * w;
+newH = h / 2;
+
+newVideoData = zeros([newH, newW, 3, n], class(videoData));
+newVideoData(:, 1:w, :, :) = videoData(1:newH, :, :, :);
+newVideoData(:, w+1:end, :, :) = videoData(newH+1:end, :, :, :);
+
+
+function writeSourceInfo(data_path, index_info, filled)
+
+[folder, name, ~] = fileparts(data_path);
+
+info_path = fullfile(folder, [name '_info.json']);
+
+% Find indices of filled samples/frames
+filled_samples = find(filled(:));
+
+source_info.sources = index_info;
+source_info.filled_samples = filled_samples;
+
+% Encode as pretty JSON array
+json_str = jsonencode(source_info, 'PrettyPrint', true);
+
+% Write to file
+fid = fopen(info_path, 'w');
+if fid == -1
+    error('Could not open %s for writing.', info_path);
+end
+fwrite(fid, json_str, 'char');
+fclose(fid);
