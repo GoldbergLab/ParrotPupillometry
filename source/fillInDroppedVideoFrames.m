@@ -45,3 +45,7 @@ for drop_idx = 1:length(drop_info)+1
         % fprintf('Filling %d:%d from %d x %d\n', chunk_end_fixed+1, chunk_start_fixed-1, source_frame, drop_info(drop_idx).num_dropped);
     end
 end
+
+if nnz(filled) ~= sum([drop_info.num_dropped])
+    error('Something went wrong - number of dropped frames does not match number of true values in filled')
+end
