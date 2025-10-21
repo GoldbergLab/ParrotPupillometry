@@ -1,7 +1,7 @@
 function [collected_data, index_info, collected_filled] = collect_sync_pulse_period_data(this_path, next_path, this_drop_info, next_drop_info, this_onset, next_onset, cache, loader, data_slicer, data_sizer, data_combiner, data_drop_fixer, options)
 arguments
-    this_path char
-    next_path char
+    this_path {mustBeTextScalar}
+    next_path {mustBeTextScalar}
     this_drop_info
     next_drop_info
     this_onset double
@@ -113,13 +113,13 @@ if  pulse_spans_two_files
     % Combine the previous slice with this one
     collected_data = data_combiner(collected_data, next_collected_data);
     % Combine filled info too
-    collected_filled = [collected_filled, filled2(start_sample, end_sample)];
+    collected_filled = [collected_filled, filled2(start_sample:end_sample)];
     % Collect info about how data was sliced for posterity
     index_info(2).path = next_path;
     index_info(2).start_sample = start_sample;
     index_info(2).end_sample = end_sample;
     if options.Debug
-        [~, name, ext] = fileparts(this_path);
+        [~, name, ext] = fileparts(next_path);
         fprintf('Loading %06d - %06d from %s\n', start_sample, end_sample, [name, ext]);
     end
 end
