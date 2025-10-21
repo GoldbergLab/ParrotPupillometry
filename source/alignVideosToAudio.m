@@ -33,6 +33,9 @@ arguments
     options.WriteSourceInfo = true
 end
 
+% Record sync_struct
+save(fullfile(aligned_folder, 'sync_struct.mat'), 'sync_struct');
+
 % # of sync pulse periods that should be included in each output file
 pulse_periods_per_file = options.PulsesPerFile;
 
