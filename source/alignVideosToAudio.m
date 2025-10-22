@@ -150,12 +150,14 @@ for pulse_idx = 1:pulse_periods_per_file:length(sync_struct)
 
     [~, name, ext] = fileparts(sync_struct_segment(1).naneye_file);
     naneye_output_path = fullfile(aligned_folder, [pulse_tag, name, ext]);
-    saveVideoData(naneye_data, naneye_output_path, 'Motion JPEG AVI', mean_naneye_fs);
+    fastVideoWriter(naneye_output_path, naneye_data, '-c:v', 'h264', '-crf', '20', 'FrameRate', mean_naneye_fs, 'AudioData', audio_data);
+    % saveVideoData(naneye_data, naneye_output_path, 'Motion JPEG AVI', mean_naneye_fs);
     if options.WriteSourceInfo; writeSourceInfo(naneye_output_path, naneye_index_info, naneye_filled); end
 
     [~, name, ext] = fileparts(sync_struct_segment(1).webcam_file);
     webcam_output_path = fullfile(aligned_folder, [pulse_tag, name, ext]);
-    saveVideoData(webcam_data, webcam_output_path, 'Motion JPEG AVI', mean_webcam_fs);
+    fastVideoWriter(webcam_output_path, webcam_data, '-c:v', 'h264', '-crf', '20', 'FrameRate', mean_webcam_fs, 'AudioData', audio_data);
+    % saveVideoData(webcam_data, webcam_output_path, 'Motion JPEG AVI', mean_webcam_fs);
     if options.WriteSourceInfo; writeSourceInfo(webcam_output_path, webcam_index_info, webcam_filled); end
 
 end
