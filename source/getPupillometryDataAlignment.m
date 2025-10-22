@@ -66,8 +66,8 @@ naneye_flash_struct = options.NaneyeFlashStruct;
 webcam_flash_struct = options.WebcamFlashStruct;
 analysis_date = char(datetime());
 if options.SaveStructs
-    structFile = fullfile(root, 'AlignmentStructs.mat');
-    save(structFile, 'click_struct', 'naneye_flash_struct', 'webcam_flash_struct', 'analysis_date');
+    structFile = getAlignmentStructPath(root);
+    save(structFile, 'click_struct', 'naneye_flash_struct', 'webcam_flash_struct', 'sync_struct', 'analysis_date');
 end
 
 if isempty(click_struct)
