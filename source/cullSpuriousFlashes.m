@@ -41,10 +41,10 @@ for file_idx = 1:length(flash_struct_corrected)
     for onset_idx = 1:length(flash_struct_corrected(file_idx).onsets)
         flash_frame = flash_struct_corrected(file_idx).onsets_cumulative(onset_idx) - last_flash;
         corrected_flash_frame = flash_period * round((flash_frame) / flash_period);
-        fprintf('%f ==> %.01f == %dth flash (%f)\n', flash_frame, corrected_flash_frame, round((flash_frame) / flash_period), abs(flash_frame - corrected_flash_frame));
+        % fprintf('%f ==> %.01f == %dth flash (%f)\n', flash_frame, corrected_flash_frame, round((flash_frame) / flash_period), abs(flash_frame - corrected_flash_frame));
         % Is corrected flash frame close, or is this a spurious flash
         if abs(flash_frame - corrected_flash_frame) > max_deviation
-            fprintf('deviation is %f, it is not real!\n', abs(flash_frame - corrected_flash_frame))
+            fprintf('File #%d onset #%d deviation is %f, it is not real!\n', file_idx, onset_idx, abs(flash_frame - corrected_flash_frame))
             invalid_flash_idx(end+1) = onset_idx;
         else
             last_flash = flash_struct_corrected(file_idx).onsets_cumulative(onset_idx);
