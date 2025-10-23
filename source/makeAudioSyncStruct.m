@@ -6,6 +6,7 @@ arguments
     options.Channel double = 1
     options.NumIgnoredClicks = 0
     options.FileLimit = []
+    options.BadSyncFileIdx = []
 end
 
 audio_files = findFiles(root_directory, '.*\.wav', 'SearchSubdirectories', false);
@@ -23,7 +24,18 @@ cumulative_samples = 0;
 for k = 1:num_files
     audio_file = audio_files{k};
     click_struct(k).path = audio_file;
-    [onsets, offsets, num_samples, fs] = findSyncClickOnsets(audio_file, threshold, pulse_time, 'Channel', options.Channel);
+    if ~ismember(k, options.BadSyncFileIdx)
+        % User indicates this video should have good sync signal
+        [onsets, offsets, num_samples, fs] = findSyncClickOnsets(audio_file, threshold, pulse_time, 'Channel', options.Channel);
+    else
+        % Users indicates sync signal is bad in this file
+        %   Leave onsets/offsets empty, just determine number of samples 
+        %   and sample rate.
+        onsets = [];
+        offsets = [];
+        [y, fs] = audioread(audio_file);
+        num_samples = size(y, 1);
+    end
 
     if options.NumIgnoredClicks > 0
         if length(onsets) <= options.NumIgnoredClicks
