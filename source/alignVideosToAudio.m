@@ -9,7 +9,10 @@ function alignVideosToAudio(sync_struct, aligned_folder, options)
 %    aligned_folder is the path to a folder where the aligned data files
 %       should be written
 %    Name/Value arguments can include:
-%       AudioChannel - not used yet
+%       ClickChannel - Audio channel # containing the sync clicks.
+%       VideoClicks - Whether or not to include sync click audio channel
+%           in the saved video files. The click channel will be included
+%           in the saved audio files regardless. Default is true
 %       PulsesPerFile - how many sync pulse periods each file should 
 %           include. Default is 1.
 %
@@ -28,7 +31,8 @@ function alignVideosToAudio(sync_struct, aligned_folder, options)
 arguments
     sync_struct struct
     aligned_folder
-    options.AudioChannel = 1
+    options.ClickChannel = 1
+    options.VideoClicks = true
     options.PulsesPerFile = 2;
     options.WriteSourceInfo = true
 end
@@ -147,6 +151,16 @@ for pulse_idx = 1:pulse_periods_per_file:length(sync_struct)
     audio_output_path = fullfile(aligned_folder, [pulse_tag, name, ext]);
     audiowrite(audio_output_path, audio_data, mean_audio_fs);
     if options.WriteSourceInfo; writeSourceInfo(audio_output_path, audio_index_info, audio_filled); end
+
+    if ~options.VideoClicks
+        % Exclude click channel from audio
+        audio_channel_list = 1:size(audio_data, 2);
+        if sum(audio_channel_list == options.ClickChannel) ~= 1
+            error('Something went wrong excluding the click channel - got %d as click channel, but found %d audio channels.', options.ClickChannel, size(audio_data, 2));
+        end
+        audio_channel_list = audio_channel_list(audio_channel_list ~= options.ClickChannel);
+        audio_data = audio_data(:, audio_channel_list);
+    end
 
     [~, name, ext] = fileparts(sync_struct_segment(1).naneye_file);
     naneye_output_path = fullfile(aligned_folder, [pulse_tag, name, ext]);

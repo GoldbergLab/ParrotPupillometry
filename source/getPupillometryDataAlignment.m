@@ -34,6 +34,8 @@ function [sync_struct, click_struct, naneye_flash_struct, webcam_flash_struct] =
 %       FileLimit = The number of files to limit each data stream to.
 %           Typical use case is if you just want to test alignment on the 
 %           first few files. Default is [], meaning all files are processed
+%       ClickChannel = Audio channel # containing the sync clicks. Default
+%           is 1.
 %    sync_struct is a structure containing comprehensive synchronization
 %       information about the three data streams. Can be used by 
 %       alignVideosToAudio
@@ -64,6 +66,7 @@ arguments
     options.AudioNumIgnoredPulses = 0
     options.SaveStructs = true
     options.FileLimit = []
+    options.ClickChannel = 1
 end
 
 sync_struct = struct();
@@ -82,7 +85,7 @@ if isempty(click_struct)
         root, ...
         0.015, ...
         0.08, ...
-        "Channel", 1, ...
+        "Channel", options.ClickChannel, ...
         "NumIgnoredClicks", options.AudioNumIgnoredPulses, ...
         "FileLimit", options.FileLimit ...
         );
