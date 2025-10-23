@@ -5,9 +5,14 @@ arguments
     pulse_time double = 0.08
     options.Channel double = 1
     options.NumIgnoredClicks = 0
+    options.FileLimit = []
 end
 
 audio_files = findFiles(root_directory, '.*\.wav', 'SearchSubdirectories', false);
+if ~isempty(options.FileLimit) 
+    % User requests limited number of audio files
+    audio_files = audio_files(1:options.FileLimit);
+end
 num_files = length(audio_files);
 
 % Initialize structure

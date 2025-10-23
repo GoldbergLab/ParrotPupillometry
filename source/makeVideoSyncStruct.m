@@ -12,9 +12,14 @@ arguments
     options.PlotOnsets (1, 1) logical = false
     options.RangeBasedThreshold (1, 1) logical = false
     options.NumIgnoredFlashes = 0
+    options.FileLimit = []
 end
 
 video_files = findFiles(root_directory, options.FileRegex, 'SearchSubdirectories', false);
+if ~isempty(options.FileLimit) 
+    % User requests limited number of video files
+    video_files = video_files(1:options.FileLimit);
+end
 num_files = length(video_files);
 
 % Initialize structure

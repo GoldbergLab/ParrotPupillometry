@@ -7,6 +7,7 @@ arguments
     options.NaneyeNumIgnoredPulses = 0
     options.WebcamNumIgnoredPulses = 0
     options.AudioNumIgnoredPulses = 0
+    options.FileLimit = []
 end
 
 sync_struct = struct.empty();
@@ -50,7 +51,13 @@ end
 
 if isempty(sync_struct)
     % options.SyncStruct is still empty - generate it from scratch
-    sync_struct = getPupillometryDataAlignment(data_root, 'NaneyeNumIgnoredPulses', options.NaneyeNumIgnoredPulses, 'WebcamNumIgnoredPulses', options.WebcamNumIgnoredPulses, 'AudioNumIgnoredPulses', options.AudioNumIgnoredPulses);
+    sync_struct = getPupillometryDataAlignment( ...
+        data_root, ...
+        'NaneyeNumIgnoredPulses', options.NaneyeNumIgnoredPulses, ...
+        'WebcamNumIgnoredPulses', options.WebcamNumIgnoredPulses, ...
+        'AudioNumIgnoredPulses', options.AudioNumIgnoredPulses, ...
+        'FileLimit', options.FileLimit ...
+        );
 end
 
 alignVideosToAudio(sync_struct, align_root, 'PulsesPerFile', options.PulsesPerFile);
