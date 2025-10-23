@@ -46,8 +46,8 @@ for file_idx = 1:length(flash_struct_corrected)
         end
         flash_frame = flash_struct_corrected(file_idx).onsets_cumulative(onset_idx) - previous_flash_onset;
         num_missing_flashes = round((flash_frame) / flash_period) - 1;
-        fprintf('****** Found %d consecutive missing flashes!\n', num_missing_flashes);
         if num_missing_flashes > 0
+            fprintf('****** Found %d consecutive missing flashes!\n', num_missing_flashes);
             % At least one missing flash detected - add one, then we'll
             % check again
             time_to_missing_flash = round(flash_period);

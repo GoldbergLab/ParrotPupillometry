@@ -10,7 +10,7 @@ arguments
 end
 
 audio_files = findFiles(root_directory, '.*\.wav', 'SearchSubdirectories', false);
-if ~isempty(options.FileLimit) 
+if ~isempty(options.FileLimit) && length(audio_files) > options.FileLimit
     % User requests limited number of audio files
     audio_files = audio_files(1:options.FileLimit);
 end
