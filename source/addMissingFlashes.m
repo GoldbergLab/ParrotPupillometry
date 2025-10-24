@@ -57,7 +57,7 @@ for file_idx = 1:length(flash_struct_corrected)
             missing_flash_frame_offset = missing_flash_frame_offset_cumulative - missing_file_first_frame + 1;
 
             disp('*************************************')
-            fprintf('File #%d, adding missing flash', file_idx);
+            fprintf('File #%d, adding missing flash\n', missing_file_idx);
             disp('Add missing flash:')
             disp(missing_flash_frame_onset_cumulative)
             disp('')
