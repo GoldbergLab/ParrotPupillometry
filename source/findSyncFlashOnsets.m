@@ -117,8 +117,8 @@ debounce_samples = debounce_time * fs;
 flash_rising_edges = find(diff(intensity > threshold)>0);
 flash_starts = [];
 
-% In case there was an flash start right before the start of the file
-debounce_start = 0;
+% Assume there is no flash start right before the start of the file
+debounce_start = nan;
 
 while true
     % Eliminate any following rising edges that are within the debounce time

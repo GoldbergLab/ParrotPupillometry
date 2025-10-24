@@ -9,7 +9,8 @@ function [onsets, offsets, num_samples, fs] = findSyncClickOnsets(audio, thresho
 %       an audio file
 %    threshold is a threshold defining the minimum amplitude for a sync 
 %       click in arbitrary audio input units
-%    pulse_time is the time between the "on" click and the "off" click
+%    pulse_time is the approximate time between the "on" click and the 
+%       "off" click
 %    Name/Value pairs may include:
 %       SamplingRate: the sampling rate of the audio. If audio is a file 
 %           path, this may be left as an empty array (default) to use the 
@@ -47,6 +48,7 @@ arguments
     options.SamplingRate double = []
     options.Channel (1, 1) double = 1
     options.PlotOnsets (1, 1) logical = false
+    options.NextAudio = []
 end
 
 fs = options.SamplingRate;
@@ -58,10 +60,16 @@ if istext(audio)
         fs = fs_loaded;
     end
 end
+if istext(options.NextAudio)
+    options.NextAudio = audioread(options.NextAudio);
+end
 
+% If audio is multi-channel, select one channel
 if size(audio, 2) > 1
-    % Multi-channel audio, select one channel
     audio = audio(:, options.Channel);
+end
+if size(options.NextAudio, 2) > 0
+    options.NextAudio = options.NextAudio(:, options.Channel);
 end
 
 % Calculate number of audio samples in file or vector
@@ -82,12 +90,25 @@ debounce_time = pulse_time / 2;
 % Convert debounce time to audio samples
 debounce_samples = debounce_time * fs;
 
+if size(options.NextAudio, 1) > 0
+    % How far do we want to look into the next file?
+    next_bit = round(10 * pulse_samples);
+
+    % Only need a bit of the next audio
+    if size(options.NextAudio) > next_bit
+        options.NextAudio = options.NextAudio(1:next_bit);
+    end
+
+    % Tack on the next audio
+    audio = [audio; options.NextAudio];
+end
+
 click_ons = find(abs(audio) > threshold);
 
 click_starts = [];
 
-% In case there was an onset right before the start of the file
-debounce_start = 0;
+% Assume there was no onset right before the start of the file
+debounce_start = nan;
 
 while true
     % Eliminate any following onsets that are within the debounce time
@@ -129,4 +150,11 @@ if options.PlotOnsets
     end
     xlabel('time (s)');
     hold(ax, 'off');
+end
+
+if ~isempty(options.NextAudio)
+    % Filter out any onsets after end of file
+    in_range = onsets <= num_samples;
+    onsets = onsets(in_range);
+    offsets = offsets(in_range);
 end

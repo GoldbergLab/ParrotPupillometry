@@ -7,6 +7,7 @@ arguments
     options.NumIgnoredClicks = 0
     options.FileLimit = []
     options.BadSyncFileIdx = []
+    options.PlotOnsets = false
 end
 
 audio_files = findFiles(root_directory, '.*\.wav', 'SearchSubdirectories', false);
@@ -24,17 +25,42 @@ cumulative_samples = 0;
 for k = 1:num_files
     audio_file = audio_files{k};
     click_struct(k).path = audio_file;
+    data = cacheLoadFile(audio_file, @audioloader);
+    audio_data = data{1};
+    fs = data{2};
+
+    if k > 1
+        previous_data = cacheLoadFile(audio_files{k-1}, @audioloader);
+        previous_audio_data = previous_data{1};
+    else
+        previous_audio_data = zeros(0, size(audio_data, 2));
+    end
+    if k < num_files
+        next_data = cacheLoadFile(audio_files{k+1}, @audioloader);
+        next_audio_data = next_data{1};
+    else
+        next_audio_data = zeros(0, size(audio_data, 2));
+    end
+
     if ~ismember(k, options.BadSyncFileIdx)
         % User indicates this video should have good sync signal
-        [onsets, offsets, num_samples, fs] = findSyncClickOnsets(audio_file, threshold, pulse_time, 'Channel', options.Channel);
+        [onsets, offsets, num_samples, fs] = findSyncClickOnsets( ...
+            audio_data, ...
+            threshold, ...
+            pulse_time, ...
+            'PreviousData', previous_audio_data, ...
+            'NextData', next_audio_data, ...
+            'SamplingRate', fs, ...
+            'Channel', options.Channel, ...
+            'PlotOnsets', options.PlotOnsets ...
+            );
     else
         % Users indicates sync signal is bad in this file
         %   Leave onsets/offsets empty, just determine number of samples 
         %   and sample rate.
         onsets = [];
         offsets = [];
-        [y, fs] = audioread(audio_file);
-        num_samples = size(y, 1);
+        num_samples = size(audio_data, 1);
     end
 
     if options.NumIgnoredClicks > 0
@@ -57,3 +83,7 @@ for k = 1:num_files
     click_struct(k).fs = fs;
     cumulative_samples = cumulative_samples + num_samples;
 end
+
+function data = audioloader(path)
+[y, fs] = audioread(path);
+data = {y, fs};
