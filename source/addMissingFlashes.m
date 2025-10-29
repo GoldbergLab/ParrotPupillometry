@@ -33,8 +33,10 @@ flash_period = flash_period_corrected;
 
 flash_struct_corrected = flash_struct;
 
-previous_flash_onset = flash_struct_corrected(1).onsets_cumulative(1);
-previous_flash_offset = flash_struct_corrected(1).offsets_cumulative(1);
+flash_onsets_cumulative = [flash_struct.onsets_cumulative];
+flash_offsets_cumulative = [flash_struct.offsets_cumulative];
+previous_flash_onset = flash_onsets_cumulative(1);
+previous_flash_offset = flash_offsets_cumulative(1);
 
 % Add missing flashes
 for file_idx = 1:length(flash_struct_corrected)
