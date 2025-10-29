@@ -32,7 +32,8 @@ fprintf('Corrected flash period:        %f\n', flash_period_corrected);
 flash_period = flash_period_corrected;
 
 max_deviation = flash_period * 0.15;
-last_flash = flash_struct(1).onsets_cumulative(1);
+flash_onsets_cumulative = [flash_struct.onsets_cumulative];
+last_flash = flash_onsets_cumulative(1);
 
 flash_struct_corrected = flash_struct;
 % Reconstruct theoretical video flash times
