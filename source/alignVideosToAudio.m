@@ -176,7 +176,11 @@ for pulse_idx = 1:pulse_periods_per_file:length(sync_struct)
 
 end
 
-function newVideoData = reorientNaneyeVideo(videoData)
+function newVideoData = reorientNaneyeVideo(videoData, options)
+arguments
+    videoData
+    options.BGRtoRGB = true
+end
 w = size(videoData, 2);
 h = size(videoData, 1);
 n = size(videoData, 4);
@@ -184,9 +188,15 @@ n = size(videoData, 4);
 newW = 2 * w;
 newH = h / 2;
 
+if options.BGRtoRGB
+    colors = [3, 2, 1];
+else
+    colors = [1, 2, 3];
+end
+
 newVideoData = zeros([newH, newW, 3, n], class(videoData));
-newVideoData(:, 1:w, :, :) = videoData(1:newH, :, :, :);
-newVideoData(:, w+1:end, :, :) = videoData(newH+1:end, :, :, :);
+newVideoData(:, 1:w, :, :) = videoData(1:newH, :, colors, :);
+newVideoData(:, w+1:end, :, :) = videoData(newH+1:end, :, colors, :);
 
 
 function writeSourceInfo(data_path, index_info, filled)
