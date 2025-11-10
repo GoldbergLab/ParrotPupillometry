@@ -15,6 +15,10 @@ function alignVideosToAudio(sync_struct, aligned_folder, options)
 %           in the saved audio files regardless. Default is true
 %       PulsesPerFile - how many sync pulse periods each file should 
 %           include. Default is 1.
+%       IncludeNaneye = whether or not to look for/use naneye data. Default
+%           is true.
+%       IncludeWebcam = whether or not to look for/use webcam data. Default
+%           is true.
 %
 % This function takes the synchronization information extracted by
 %   getPupillometryDataAlignment, and executes the alignment of the data
@@ -35,6 +39,8 @@ arguments
     options.VideoClicks = true
     options.PulsesPerFile = 2;
     options.WriteSourceInfo = true
+    options.IncludeNaneye = true
+    options.IncludeWebcam = true
 end
 
 % Record sync_struct
@@ -97,53 +103,54 @@ for pulse_idx = 1:pulse_periods_per_file:length(sync_struct)
         % Gather data for this pulse period
         [audio_data_piece, audio_index_info_piece, audio_filled_piece] = ...
             collect_sync_pulse_period_data(this_path, next_path, this_drop_info, next_drop_info, this_onset, next_onset, file_cache, audio_loader, audio_data_slicer, audio_data_sizer, audio_data_combiner, [], 'DataType', 'audio', 'MaxCacheSize', 9);
-
-        % Naneye file paths
-        this_path = sync_struct_segment(idx).naneye_file;
-        next_path = sync_struct_segment(idx+1).naneye_file;
-        % Flash onsets
-        this_onset = sync_struct_segment(idx).naneye_flash_onset;
-        next_onset = sync_struct_segment(idx+1).naneye_flash_onset;
-        % Drop info
-        this_drop_info = sync_struct_segment(idx).naneye_drop_info;
-        next_drop_info = sync_struct_segment(idx+1).naneye_drop_info;
-        % Gather data for this pulse period
-        [naneye_data_piece, naneye_index_info_piece, naneye_filled_piece] = ...
-            collect_sync_pulse_period_data(this_path, next_path, this_drop_info, next_drop_info, this_onset, next_onset, file_cache, video_loader, video_data_slicer, video_data_sizer, video_data_combiner, @fillInDroppedVideoFrames, 'DataType', 'video', 'MaxCacheSize', 9);
-
-        % Webcam file paths
-        this_path = sync_struct_segment(idx).webcam_file;
-        next_path = sync_struct_segment(idx+1).webcam_file;
-        % Flash onsets
-        this_onset = sync_struct_segment(idx).webcam_flash_onset;
-        next_onset = sync_struct_segment(idx+1).webcam_flash_onset;
-        % Drop info
-        this_drop_info = [];
-        next_drop_info = [];
-        % Gather data for this pulse period
-        [webcam_data_piece, webcam_index_info_piece, webcam_filled_piece] = ...
-            collect_sync_pulse_period_data(this_path, next_path, this_drop_info, next_drop_info, this_onset, next_onset, file_cache, video_loader, video_data_slicer, video_data_sizer, video_data_combiner, [], 'DataType', 'video', 'MaxCacheSize', 9);
-
         % Combine this new pulse data with data from prior pulses, if any
         audio_data = audio_data_combiner(audio_data, audio_data_piece);
-        naneye_data = video_data_combiner(naneye_data, naneye_data_piece);
-        webcam_data = video_data_combiner(webcam_data, webcam_data_piece);
-
-        % Combine this new index data with data from prior pulses, if any
         audio_index_info = [audio_index_info, audio_index_info_piece]; %#ok<*AGROW>
-        naneye_index_info = [naneye_index_info, naneye_index_info_piece];
-        webcam_index_info = [webcam_index_info, webcam_index_info_piece];
-
         audio_filled = [audio_filled, audio_filled_piece];
-        naneye_filled = [naneye_filled, naneye_filled_piece];
-        webcam_filled = [webcam_filled, webcam_filled_piece];
+        mean_audio_fs = mean([sync_struct_segment.audio_fs]);
+
+        if options.IncludeNaneye
+            % Naneye file paths
+            this_path = sync_struct_segment(idx).naneye_file;
+            next_path = sync_struct_segment(idx+1).naneye_file;
+            % Flash onsets
+            this_onset = sync_struct_segment(idx).naneye_flash_onset;
+            next_onset = sync_struct_segment(idx+1).naneye_flash_onset;
+            % Drop info
+            this_drop_info = sync_struct_segment(idx).naneye_drop_info;
+            next_drop_info = sync_struct_segment(idx+1).naneye_drop_info;
+            % Gather data for this pulse period
+            [naneye_data_piece, naneye_index_info_piece, naneye_filled_piece] = ...
+                collect_sync_pulse_period_data(this_path, next_path, this_drop_info, next_drop_info, this_onset, next_onset, file_cache, video_loader, video_data_slicer, video_data_sizer, video_data_combiner, @fillInDroppedVideoFrames, 'DataType', 'video', 'MaxCacheSize', 9);
+            % Combine this new pulse data with data from prior pulses, if any
+            naneye_data = video_data_combiner(naneye_data, naneye_data_piece);
+            naneye_index_info = [naneye_index_info, naneye_index_info_piece];
+            naneye_filled = [naneye_filled, naneye_filled_piece];
+            naneye_data = reorientNaneyeVideo(naneye_data);
+            mean_naneye_fs = mean([sync_struct_segment.naneye_fs]);
+        end
+
+        if options.IncludeWebcam
+            % Webcam file paths
+            this_path = sync_struct_segment(idx).webcam_file;
+            next_path = sync_struct_segment(idx+1).webcam_file;
+            % Flash onsets
+            this_onset = sync_struct_segment(idx).webcam_flash_onset;
+            next_onset = sync_struct_segment(idx+1).webcam_flash_onset;
+            % Drop info
+            this_drop_info = [];
+            next_drop_info = [];
+            % Gather data for this pulse period
+            [webcam_data_piece, webcam_index_info_piece, webcam_filled_piece] = ...
+                collect_sync_pulse_period_data(this_path, next_path, this_drop_info, next_drop_info, this_onset, next_onset, file_cache, video_loader, video_data_slicer, video_data_sizer, video_data_combiner, [], 'DataType', 'video', 'MaxCacheSize', 9);
+            % Combine this new pulse data with data from prior pulses, if any
+            webcam_data = video_data_combiner(webcam_data, webcam_data_piece);
+            webcam_index_info = [webcam_index_info, webcam_index_info_piece];
+            webcam_filled = [webcam_filled, webcam_filled_piece];
+            mean_webcam_fs = mean([sync_struct_segment.webcam_fs]);
+        end
+
     end
-
-    naneye_data = reorientNaneyeVideo(naneye_data);
-
-    mean_audio_fs = mean([sync_struct_segment.audio_fs]);
-    mean_naneye_fs = mean([sync_struct_segment.naneye_fs]);
-    mean_webcam_fs = mean([sync_struct_segment.webcam_fs]);
 
     pulse_tag = sprintf('pulse%04d_', pulse_idx);
 
@@ -162,17 +169,21 @@ for pulse_idx = 1:pulse_periods_per_file:length(sync_struct)
         audio_data = audio_data(:, audio_channel_list);
     end
 
-    [~, name, ext] = fileparts(sync_struct_segment(1).naneye_file);
-    naneye_output_path = fullfile(aligned_folder, [pulse_tag, name, ext]);
-    fastVideoWriter(naneye_output_path, naneye_data, '-c:v', 'h264', '-crf', '20', 'FrameRate', mean_naneye_fs, 'AudioData', audio_data);
-    % saveVideoData(naneye_data, naneye_output_path, 'Motion JPEG AVI', mean_naneye_fs);
-    if options.WriteSourceInfo; writeSourceInfo(naneye_output_path, naneye_index_info, naneye_filled); end
+    if options.IncludeNaneye
+        [~, name, ext] = fileparts(sync_struct_segment(1).naneye_file);
+        naneye_output_path = fullfile(aligned_folder, [pulse_tag, name, ext]);
+        fastVideoWriter(naneye_output_path, naneye_data, '-c:v', 'h264', '-crf', '20', 'FrameRate', mean_naneye_fs, 'AudioData', audio_data);
+        % saveVideoData(naneye_data, naneye_output_path, 'Motion JPEG AVI', mean_naneye_fs);
+        if options.WriteSourceInfo; writeSourceInfo(naneye_output_path, naneye_index_info, naneye_filled); end
+    end
 
-    [~, name, ext] = fileparts(sync_struct_segment(1).webcam_file);
-    webcam_output_path = fullfile(aligned_folder, [pulse_tag, name, ext]);
-    fastVideoWriter(webcam_output_path, webcam_data, '-c:v', 'h264', '-crf', '20', 'FrameRate', mean_webcam_fs, 'AudioData', audio_data);
-    % saveVideoData(webcam_data, webcam_output_path, 'Motion JPEG AVI', mean_webcam_fs);
-    if options.WriteSourceInfo; writeSourceInfo(webcam_output_path, webcam_index_info, webcam_filled); end
+    if options.IncludeWebcam
+        [~, name, ext] = fileparts(sync_struct_segment(1).webcam_file);
+        webcam_output_path = fullfile(aligned_folder, [pulse_tag, name, ext]);
+        fastVideoWriter(webcam_output_path, webcam_data, '-c:v', 'h264', '-crf', '20', 'FrameRate', mean_webcam_fs, 'AudioData', audio_data);
+        % saveVideoData(webcam_data, webcam_output_path, 'Motion JPEG AVI', mean_webcam_fs);
+        if options.WriteSourceInfo; writeSourceInfo(webcam_output_path, webcam_index_info, webcam_filled); end
+    end
 
 end
 
