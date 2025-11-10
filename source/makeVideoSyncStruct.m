@@ -16,7 +16,7 @@ arguments
     options.BadSyncFileIdx = []
 end
 
-video_files = findFiles(root_directory, options.FileRegex, 'SearchSubdirectories', false);
+video_files = findPaths(root_directory, options.FileRegex, 'SearchSubdirectories', false);
 if ~isempty(options.FileLimit) && length(video_files) > options.FileLimit
     % User requests limited number of video files
     video_files = video_files(1:options.FileLimit);
