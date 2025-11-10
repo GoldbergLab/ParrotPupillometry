@@ -12,7 +12,7 @@ arguments
     options.NaneyeBadSyncFileIdx = []
     options.WebcamBadSyncFileIdx = []
     options.AudioBadSyncFileIdx = []
-    options.WebcamROI = [1, 1, 50, 50]
+    options.WebcamROI = [1, 1, 50, 50] % [top left x /top left y /w /h]
     options.NaneyeROI = [200, 1, 50, 50]
     options.IncludeNaneye = true
     options.IncludeWebcam = true
