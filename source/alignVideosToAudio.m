@@ -126,7 +126,6 @@ for pulse_idx = 1:pulse_periods_per_file:length(sync_struct)
             naneye_data = video_data_combiner(naneye_data, naneye_data_piece);
             naneye_index_info = [naneye_index_info, naneye_index_info_piece];
             naneye_filled = [naneye_filled, naneye_filled_piece];
-            naneye_data = reorientNaneyeVideo(naneye_data);
             mean_naneye_fs = mean([sync_struct_segment.naneye_fs]);
         end
 
@@ -172,6 +171,7 @@ for pulse_idx = 1:pulse_periods_per_file:length(sync_struct)
     if options.IncludeNaneye
         [~, name, ext] = fileparts(sync_struct_segment(1).naneye_file);
         naneye_output_path = fullfile(aligned_folder, [pulse_tag, name, ext]);
+        naneye_data = reorientNaneyeVideo(naneye_data);
         fastVideoWriter(naneye_output_path, naneye_data, '-c:v', 'h264', '-crf', '20', 'FrameRate', mean_naneye_fs, 'AudioData', audio_data);
         % saveVideoData(naneye_data, naneye_output_path, 'Motion JPEG AVI', mean_naneye_fs);
         if options.WriteSourceInfo; writeSourceInfo(naneye_output_path, naneye_index_info, naneye_filled); end
