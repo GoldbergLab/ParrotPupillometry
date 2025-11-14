@@ -80,7 +80,7 @@ pulse_delay = 0.0035;
 % Adjust pulse time
 pulse_time = pulse_time + pulse_delay;
 % Tolerance for variation in relay turn-off time
-pulse_tolerance = 0.03 * pulse_time;
+pulse_tolerance = 0.12 * pulse_time;
 % Convert pulse times to samples
 pulse_samples = pulse_time * fs;
 pulse_tolerance_samples = pulse_tolerance * fs;
@@ -126,6 +126,12 @@ end
 onsets = [];
 offsets = [];
 
+if options.PlotOnsets
+    figure; 
+    ax = axes();
+    hold(ax, "on");
+end
+
 % Look for onset/offset click pairs in click_starts. They only count as a
 %   pair if they are separated within tolerance by the given pulse time.
 for k = 1:length(click_starts)-1
@@ -134,14 +140,18 @@ for k = 1:length(click_starts)-1
         % This is a pulse on/off pair of clicks
         onsets(end+1) = click_starts(k);
         offsets(end+1) = click_starts(k+1);
+        if options.PlotOnsets
+            plot(ax, [click_starts(k)/fs, click_starts(k+1)/fs], [audio(click_starts(k)), audio(click_starts(k))], 'g-');
+        end
+    else
+        if options.PlotOnsets
+            plot(ax, [click_starts(k)/fs, click_starts(k+1)/fs], [audio(click_starts(k)), audio(click_starts(k))], 'r-');
+        end
     end
 end
 
 if options.PlotOnsets
-    figure; 
-    ax = axes();
     plot(ax, (1:length(audio)) / fs, audio, 'k');
-    hold(ax, 'on');
     for onset = onsets
         plot(ax, onset/fs, 0, 'g*');
     end
