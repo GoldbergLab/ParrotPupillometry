@@ -62,6 +62,15 @@ video_data_slicer = @(data, start, stop)data(:, :, :, start:stop);
 video_data_sizer = @(data)size(data, 4);
 video_data_combiner = @(data1, data2)cat(4, data1, data2);
 
+% Number of independently-synced naneye sub-streams (eyes) encoded in the
+%   stacked naneye video. Read from the sync struct so this function stays
+%   schema-driven and needs no separate dual/single flag.
+if options.IncludeNaneye
+    num_naneye_streams = numel(sync_struct(1).naneye);
+else
+    num_naneye_streams = 0;
+end
+
 % Output loop:
 % Loop over the pulses, skipping by # of pulse periods per file
 for pulse_idx = 1:pulse_periods_per_file:length(sync_struct)
@@ -76,15 +85,15 @@ for pulse_idx = 1:pulse_periods_per_file:length(sync_struct)
     % Get the rows of the sync struct relevant to these sync pulses
     sync_struct_segment = sync_struct(pulse_idx:end_pulse_idx);
     audio_data = [];
-    naneye_data = [];
+    naneye_data = cell(1, num_naneye_streams);
     webcam_data = [];
 
     audio_index_info = [];
-    naneye_index_info = [];
+    naneye_index_info = cell(1, num_naneye_streams);
     webcam_index_info = [];
 
     audio_filled = [];
-    naneye_filled = [];
+    naneye_filled = cell(1, num_naneye_streams);
     webcam_filled = [];
 
     % Loop over pulse periods to include in this output file
@@ -92,11 +101,11 @@ for pulse_idx = 1:pulse_periods_per_file:length(sync_struct)
         % Extract information from this pulse and the next one, because files
         %   likely span multiple pulse periods
         % Audio file paths:
-        this_path = sync_struct_segment(idx).audio_file;
-        next_path = sync_struct_segment(idx+1).audio_file;
+        this_path = sync_struct_segment(idx).audio.file;
+        next_path = sync_struct_segment(idx+1).audio.file;
         % Click onsets:
-        this_onset = sync_struct_segment(idx).click_onset;
-        next_onset = sync_struct_segment(idx+1).click_onset;
+        this_onset = sync_struct_segment(idx).audio.click_onset;
+        next_onset = sync_struct_segment(idx+1).audio.click_onset;
         % Drop info
         this_drop_info = [];
         next_drop_info = [];
@@ -107,35 +116,41 @@ for pulse_idx = 1:pulse_periods_per_file:length(sync_struct)
         audio_data = audio_data_combiner(audio_data, audio_data_piece);
         audio_index_info = [audio_index_info, audio_index_info_piece]; %#ok<*AGROW>
         audio_filled = [audio_filled, audio_filled_piece];
-        mean_audio_fs = mean([sync_struct_segment.audio_fs]);
+        audio_segment = [sync_struct_segment.audio];
+        mean_audio_fs = mean([audio_segment.fs]);
 
         if options.IncludeNaneye
-            % Naneye file paths
-            this_path = sync_struct_segment(idx).naneye_file;
-            next_path = sync_struct_segment(idx+1).naneye_file;
-            % Flash onsets
-            this_onset = sync_struct_segment(idx).naneye_flash_onset;
-            next_onset = sync_struct_segment(idx+1).naneye_flash_onset;
-            % Drop info
-            this_drop_info = sync_struct_segment(idx).naneye_drop_info;
-            next_drop_info = sync_struct_segment(idx+1).naneye_drop_info;
-            % Gather data for this pulse period
-            [naneye_data_piece, naneye_index_info_piece, naneye_filled_piece] = ...
-                collect_sync_pulse_period_data(this_path, next_path, this_drop_info, next_drop_info, this_onset, next_onset, file_cache, video_loader, video_data_slicer, video_data_sizer, video_data_combiner, @fillInDroppedVideoFrames, 'DataType', 'video', 'MaxCacheSize', 9);
-            % Combine this new pulse data with data from prior pulses, if any
-            naneye_data = video_data_combiner(naneye_data, naneye_data_piece);
-            naneye_index_info = [naneye_index_info, naneye_index_info_piece];
-            naneye_filled = [naneye_filled, naneye_filled_piece];
-            mean_naneye_fs = mean([sync_struct_segment.naneye_fs]);
+            % Each naneye eye is cut against its own flash onsets (the two
+            %   cameras are not mutually synced), but pulled from the same
+            %   stacked file with the same drop info. They are combined into a
+            %   single output frame later, in reorientNaneyeVideo.
+            for s = 1:num_naneye_streams
+                % Naneye file paths (same file for every eye)
+                this_path = sync_struct_segment(idx).naneye(s).file;
+                next_path = sync_struct_segment(idx+1).naneye(s).file;
+                % Flash onsets (differ per eye)
+                this_onset = sync_struct_segment(idx).naneye(s).flash_onset;
+                next_onset = sync_struct_segment(idx+1).naneye(s).flash_onset;
+                % Drop info (shared across eyes)
+                this_drop_info = sync_struct_segment(idx).naneye(s).drop_info;
+                next_drop_info = sync_struct_segment(idx+1).naneye(s).drop_info;
+                % Gather data for this pulse period
+                [naneye_data_piece, naneye_index_info_piece, naneye_filled_piece] = ...
+                    collect_sync_pulse_period_data(this_path, next_path, this_drop_info, next_drop_info, this_onset, next_onset, file_cache, video_loader, video_data_slicer, video_data_sizer, video_data_combiner, @fillInDroppedVideoFrames, 'DataType', 'video', 'MaxCacheSize', 9);
+                % Combine this new pulse data with data from prior pulses, if any
+                naneye_data{s} = video_data_combiner(naneye_data{s}, naneye_data_piece);
+                naneye_index_info{s} = [naneye_index_info{s}, naneye_index_info_piece];
+                naneye_filled{s} = [naneye_filled{s}, naneye_filled_piece];
+            end
         end
 
         if options.IncludeWebcam
             % Webcam file paths
-            this_path = sync_struct_segment(idx).webcam_file;
-            next_path = sync_struct_segment(idx+1).webcam_file;
+            this_path = sync_struct_segment(idx).webcam.file;
+            next_path = sync_struct_segment(idx+1).webcam.file;
             % Flash onsets
-            this_onset = sync_struct_segment(idx).webcam_flash_onset;
-            next_onset = sync_struct_segment(idx+1).webcam_flash_onset;
+            this_onset = sync_struct_segment(idx).webcam.flash_onset;
+            next_onset = sync_struct_segment(idx+1).webcam.flash_onset;
             % Drop info
             this_drop_info = [];
             next_drop_info = [];
@@ -146,14 +161,15 @@ for pulse_idx = 1:pulse_periods_per_file:length(sync_struct)
             webcam_data = video_data_combiner(webcam_data, webcam_data_piece);
             webcam_index_info = [webcam_index_info, webcam_index_info_piece];
             webcam_filled = [webcam_filled, webcam_filled_piece];
-            mean_webcam_fs = mean([sync_struct_segment.webcam_fs]);
+            webcam_segment = [sync_struct_segment.webcam];
+            mean_webcam_fs = mean([webcam_segment.fs]);
         end
 
     end
 
     pulse_tag = sprintf('pulse%04d_', pulse_idx);
 
-    [~, name, ext] = fileparts(sync_struct_segment(1).audio_file);
+    [~, name, ext] = fileparts(sync_struct_segment(1).audio.file);
     audio_output_path = fullfile(aligned_folder, [pulse_tag, name, ext]);
     audiowrite(audio_output_path, audio_data, mean_audio_fs);
     if options.WriteSourceInfo; writeSourceInfo(audio_output_path, audio_index_info, audio_filled); end
@@ -169,16 +185,36 @@ for pulse_idx = 1:pulse_periods_per_file:length(sync_struct)
     end
 
     if options.IncludeNaneye
-        [~, name, ext] = fileparts(sync_struct_segment(1).naneye_file);
+        % The output file name is taken from the (shared) source naneye file.
+        [~, name, ext] = fileparts(sync_struct_segment(1).naneye(1).file);
         naneye_output_path = fullfile(aligned_folder, [pulse_tag, name, ext]);
-        naneye_data = reorientNaneyeVideo(naneye_data);
-        fastVideoWriter(naneye_output_path, naneye_data, '-c:v', 'h264', '-crf', '20', 'FrameRate', mean_naneye_fs, 'AudioData', audio_data);
-        % saveVideoData(naneye_data, naneye_output_path, 'Motion JPEG AVI', mean_naneye_fs);
-        if options.WriteSourceInfo; writeSourceInfo(naneye_output_path, naneye_index_info, naneye_filled); end
+        % Combine the independently-cut eyes into a single frame. The eyes can
+        %   differ in length by a frame or two (inter-camera drift across the
+        %   file); reorientNaneyeVideo truncates them to the shortest.
+        src_rows = {sync_struct_segment(1).naneye.src_rows};
+        naneye_combined = reorientNaneyeVideo(naneye_data, src_rows);
+        % Trim the per-eye source-info masks to the combined frame count so the
+        %   recorded filled-frame indices stay valid for the written video.
+        num_combined_frames = size(naneye_combined, 4);
+        naneye_filled = cellfun(@(filled)filled(1:num_combined_frames), naneye_filled, 'UniformOutput', false);
+        naneye_fs_per_stream = arrayfun( ...
+            @(s)mean(arrayfun(@(row)row.naneye(s).fs, sync_struct_segment)), ...
+            1:num_naneye_streams);
+        mean_naneye_fs = mean(naneye_fs_per_stream);
+        fastVideoWriter(naneye_output_path, naneye_combined, '-c:v', 'h264', '-crf', '20', 'FrameRate', mean_naneye_fs, 'AudioData', audio_data);
+        % saveVideoData(naneye_combined, naneye_output_path, 'Motion JPEG AVI', mean_naneye_fs);
+        if options.WriteSourceInfo
+            if num_naneye_streams == 1
+                % Legacy single-eye data: keep the original flat sidecar format
+                writeSourceInfo(naneye_output_path, naneye_index_info{1}, naneye_filled{1});
+            else
+                writeSourceInfo(naneye_output_path, naneye_index_info, naneye_filled);
+            end
+        end
     end
 
     if options.IncludeWebcam
-        [~, name, ext] = fileparts(sync_struct_segment(1).webcam_file);
+        [~, name, ext] = fileparts(sync_struct_segment(1).webcam.file);
         webcam_output_path = fullfile(aligned_folder, [pulse_tag, name, ext]);
         fastVideoWriter(webcam_output_path, webcam_data, '-c:v', 'h264', '-crf', '20', 'FrameRate', mean_webcam_fs, 'AudioData', audio_data);
         % saveVideoData(webcam_data, webcam_output_path, 'Motion JPEG AVI', mean_webcam_fs);
@@ -187,17 +223,25 @@ for pulse_idx = 1:pulse_periods_per_file:length(sync_struct)
 
 end
 
-function newVideoData = reorientNaneyeVideo(videoData, options)
+function newVideoData = reorientNaneyeVideo(naneye_data, src_rows, options)
+% Combine the per-eye stacked-frame buffers into a single output frame, with the
+%   two eyes laid out side by side (eye 0 left, eye 1 right) and color converted
+%   from BGR to RGB.
+%
+%   naneye_data is a cell array of H x W x 3 x N stacked-frame buffers, one per
+%       naneye eye. Each eye was cut against its own sync flash, so the buffers
+%       may differ slightly in frame count; they are truncated to the shortest.
+%   src_rows is a cell array of row-index vectors, one per buffer, giving the
+%       rows of the stacked frame each eye occupies.
+%
+%   With a single buffer (legacy single-flash data, where both halves were cut
+%   together) the one stacked buffer is destacked top/bottom into left/right,
+%   reproducing the original behavior; src_rows is ignored.
 arguments
-    videoData
+    naneye_data cell
+    src_rows cell = {}
     options.BGRtoRGB = true
 end
-w = size(videoData, 2);
-h = size(videoData, 1);
-n = size(videoData, 4);
-
-newW = 2 * w;
-newH = h / 2;
 
 if options.BGRtoRGB
     colors = [3, 2, 1];
@@ -205,22 +249,61 @@ else
     colors = [1, 2, 3];
 end
 
-newVideoData = zeros([newH, newW, 3, n], class(videoData));
-newVideoData(:, 1:w, :, :) = videoData(1:newH, :, colors, :);
-newVideoData(:, w+1:end, :, :) = videoData(newH+1:end, :, colors, :);
+if isscalar(naneye_data)
+    % Legacy: one buffer holding both stacked halves, cut together. Destack the
+    %   top and bottom halves into left and right.
+    videoData = naneye_data{1};
+    w = size(videoData, 2);
+    h = size(videoData, 1);
+    n = size(videoData, 4);
+    half_height = h / 2;
+    newVideoData = zeros([half_height, 2 * w, 3, n], class(videoData));
+    newVideoData(:, 1:w, :, :) = videoData(1:half_height, :, colors, :);
+    newVideoData(:, w+1:end, :, :) = videoData(half_height+1:end, :, colors, :);
+    return
+end
+
+% Two or more independently-synced eyes. Crop each eye to its source rows and
+%   apply the color conversion.
+num_streams = numel(naneye_data);
+eyes = cell(1, num_streams);
+frame_counts = zeros(1, num_streams);
+for s = 1:num_streams
+    eyes{s} = naneye_data{s}(src_rows{s}, :, colors, :);
+    frame_counts(s) = size(eyes{s}, 4);
+end
+
+% Truncate every eye to the shortest length (drop, don't pad), then lay the eyes
+%   out side by side.
+num_frames = min(frame_counts);
+for s = 1:num_streams
+    eyes{s} = eyes{s}(:, :, :, 1:num_frames);
+end
+newVideoData = cat(2, eyes{:});
 
 
 function writeSourceInfo(data_path, index_info, filled)
+% Write a JSON sidecar describing the source data each output sample/frame came
+%   from, and which samples/frames were filled in (duplicated) to cover drops.
+%   For a single-stream output (audio, webcam), index_info is a struct array and
+%   filled is a logical vector. For the combined naneye output, index_info and
+%   filled are cell arrays with one entry per eye, written under a "streams"
+%   array so each eye's provenance is recorded separately.
 
 [folder, name, ~] = fileparts(data_path);
 
 info_path = fullfile(folder, [name '_info.json']);
 
-% Find indices of filled samples/frames
-filled_samples = find(filled(:));
-
-source_info.sources = index_info;
-source_info.filled_samples = filled_samples;
+if iscell(index_info)
+    % Multiple sub-streams (the two naneye eyes)
+    for s = 1:numel(index_info)
+        source_info.streams(s).sources = index_info{s};
+        source_info.streams(s).filled_samples = find(filled{s}(:));
+    end
+else
+    source_info.sources = index_info;
+    source_info.filled_samples = find(filled(:));
+end
 
 % Encode as pretty JSON array
 json_str = jsonencode(source_info, 'PrettyPrint', true);

@@ -13,9 +13,11 @@ arguments
     options.WebcamBadSyncFileIdx = []
     options.AudioBadSyncFileIdx = []
     options.WebcamROI = [1, 1, 50, 50] % [top left x /top left y /w /h]
-    options.NaneyeROI = [200, 1, 50, 50]
+    options.NaneyeROI = []  % empty => per-eye defaults in getPupillometryDataAlignment
     options.IncludeNaneye = true
     options.IncludeWebcam = true
+    options.DualNaneyeSync = true
+    options.NaneyeEyeHeight = 250
 end
 
 sync_struct = struct.empty();
@@ -72,7 +74,9 @@ if isempty(sync_struct)
         'WebcamROI', options.WebcamROI, ...
         'NaneyeROI', options.NaneyeROI, ...
         'IncludeNaneye', options.IncludeNaneye, ...
-        'IncludeWebcam', options.IncludeWebcam ...
+        'IncludeWebcam', options.IncludeWebcam, ...
+        'DualNaneyeSync', options.DualNaneyeSync, ...
+        'NaneyeEyeHeight', options.NaneyeEyeHeight ...
         );
 end
 
