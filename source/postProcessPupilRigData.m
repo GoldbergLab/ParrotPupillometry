@@ -66,6 +66,22 @@ elseif istext(options.SyncStruct)
 end
 
 if isempty(sync_struct)
+    % If requested, pick the webcam ROI interactively from a video in the
+    %   middle of the stream (where the rig is most likely settled and lit).
+    if options.IncludeWebcam && istext(options.WebcamROI) && strcmpi(options.WebcamROI, 'GUI')
+        webcam_files = findPaths(data_root, options.WebcamFileRegex, 'SearchSubdirectories', false);
+        if isempty(webcam_files)
+            error('postProcessPupilRigData:noWebcamFilesForGUI', ...
+                ['WebcamROI was ''GUI'', but no webcam files matching ''%s'' were ' ...
+                 'found in %s.'], options.WebcamFileRegex, data_root);
+        end
+        middle_file = webcam_files{ceil(numel(webcam_files) / 2)};
+        fprintf('Select the webcam sync ROI (press ''r'' then drag, close window to accept):\n  %s\n', middle_file);
+        roi_browser = VideoROI(middle_file);
+        options.WebcamROI = roi_browser.ROI;
+        fprintf('Selected webcam ROI: [%d %d %d %d]\n', options.WebcamROI);
+    end
+
     % options.SyncStruct is still empty - generate it from scratch
     sync_struct = getPupillometryDataAlignment( ...
         data_root, ...
