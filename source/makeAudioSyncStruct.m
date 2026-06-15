@@ -8,14 +8,25 @@ arguments
     options.FileLimit = []
     options.BadSyncFileIdx = []
     options.PlotOnsets = false
+    options.FileRegex {mustBeText} = '.*\.wav'
 end
 
-audio_files = findPaths(root_directory, '.*\.wav', 'SearchSubdirectories', false);
+audio_files = findPaths(root_directory, options.FileRegex, 'SearchSubdirectories', false);
 if ~isempty(options.FileLimit) && length(audio_files) > options.FileLimit
     % User requests limited number of audio files
     audio_files = audio_files(1:options.FileLimit);
 end
 num_files = length(audio_files);
+
+if num_files == 0
+    error('makeAudioSyncStruct:noFilesFound', ...
+        ['No audio files matched the regular expression ''%s'' in directory:\n' ...
+         '  %s\n' ...
+         'The regex is matched against each file name (case-sensitive), not the ' ...
+         'full path. Check that the directory is correct and that the FileRegex ' ...
+         'matches the actual file names.'], ...
+        options.FileRegex, char(root_directory));
+end
 
 % Initialize structure
 click_struct(num_files) = struct();
