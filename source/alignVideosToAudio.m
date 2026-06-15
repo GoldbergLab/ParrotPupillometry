@@ -41,6 +41,13 @@ arguments
     options.WriteSourceInfo = true
     options.IncludeNaneye = true
     options.IncludeWebcam = true
+    options.InsetNaneyeInWebcam = false
+    options.InsetScale (1, 1) double = 0.35
+end
+
+if options.InsetNaneyeInWebcam && ~(options.IncludeNaneye && options.IncludeWebcam)
+    error('alignVideosToAudio:insetRequiresBothStreams', ...
+        'InsetNaneyeInWebcam requires both IncludeNaneye and IncludeWebcam to be true.');
 end
 
 % Record sync_struct
@@ -221,6 +228,20 @@ for pulse_idx = 1:pulse_periods_per_file:length(sync_struct)
         if options.WriteSourceInfo; writeSourceInfo(webcam_output_path, webcam_index_info, webcam_filled); end
     end
 
+    if options.InsetNaneyeInWebcam
+        % Extra convenience output: the webcam with the combined naneye video
+        %   inset into the upper-right corner. The two streams cover the same
+        %   pulse-aligned interval but have different frame counts, so the
+        %   naneye is resampled (nearest-in-time) onto the webcam's timeline.
+        %   Both are already decoded in memory and pulse-aligned, so this costs
+        %   only the one extra encode and no re-decode/re-alignment. Uses the
+        %   webcam's frame rate since the webcam is the base layer.
+        [~, name, ext] = fileparts(sync_struct_segment(1).webcam.file);
+        inset_output_path = fullfile(aligned_folder, [pulse_tag, 'naneye_inset_', name, ext]);
+        inset_video = insetNaneyeInWebcam(webcam_data, naneye_combined, options.InsetScale);
+        fastVideoWriter(inset_output_path, inset_video, '-c:v', 'h264', '-crf', '20', 'FrameRate', mean_webcam_fs, 'AudioData', audio_data);
+    end
+
 end
 
 function newVideoData = reorientNaneyeVideo(naneye_data, src_rows, options)
@@ -280,6 +301,41 @@ for s = 1:num_streams
     eyes{s} = eyes{s}(:, :, :, 1:num_frames);
 end
 newVideoData = cat(2, eyes{:});
+
+
+function composite = insetNaneyeInWebcam(base_video, inset_source, scale)
+% Overlay inset_source into the upper-right corner of base_video.
+%
+%   base_video and inset_source are H x W x 3 x N arrays that cover the same
+%   (pulse-aligned) time interval but generally have different frame counts.
+%   The inset is resampled onto the base video's timeline by nearest-in-time
+%   mapping, and spatially downscaled to `scale` of the base width (aspect
+%   ratio preserved). Both the spatial downscale and the temporal resample are
+%   done in a single nearest-neighbor indexing operation, so no Image
+%   Processing Toolbox is required.
+base_height = size(base_video, 1);
+base_width = size(base_video, 2);
+base_frames = size(base_video, 4);
+inset_full_height = size(inset_source, 1);
+inset_full_width = size(inset_source, 2);
+inset_frames = size(inset_source, 4);
+
+% Target inset size, aspect ratio preserved, clamped to the base frame
+inset_width = min(base_width, round(base_width * scale));
+inset_height = min(base_height, round(inset_width * inset_full_height / inset_full_width));
+
+% Nearest-neighbor source indices: rows/cols downscale spatially, frames
+%   resample temporally onto the base video's timeline.
+row_idx = round(linspace(1, inset_full_height, inset_height));
+col_idx = round(linspace(1, inset_full_width, inset_width));
+frame_idx = round(linspace(1, inset_frames, base_frames));
+inset = inset_source(row_idx, col_idx, :, frame_idx);
+
+% Paste into the upper-right corner
+composite = base_video;
+top = 1;
+left = base_width - inset_width + 1;
+composite(top:top+inset_height-1, left:left+inset_width-1, :, :) = inset;
 
 
 function writeSourceInfo(data_path, index_info, filled)
