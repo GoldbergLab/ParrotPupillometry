@@ -49,6 +49,7 @@ arguments
     options.Channel (1, 1) double = 1
     options.PlotOnsets (1, 1) logical = false
     options.NextAudio = []
+    options.PulseShape {mustBeMember(options.PulseShape, {'level', 'pair'})} = 'level'
 end
 
 fs = options.SamplingRate;
@@ -75,8 +76,15 @@ end
 % Calculate number of audio samples in file or vector
 num_samples = length(audio);
 
-% Empirically determined delay between relay deactivation and click sound
-pulse_delay = 0.0035;
+% Empirically determined delay between relay deactivation and click sound.
+%   Only applies to the legacy acoustic 'pair' signal; the directly-recorded
+%   'level' pulse has no such delay.
+switch options.PulseShape
+    case 'pair'
+        pulse_delay = 0.0035;
+    case 'level'
+        pulse_delay = 0.0;
+end
 % Adjust pulse time
 pulse_time = pulse_time + pulse_delay;
 % Tolerance for variation in relay turn-off time
@@ -103,54 +111,78 @@ if size(options.NextAudio, 1) > 0
     audio = [audio; options.NextAudio];
 end
 
-click_ons = find(abs(audio) > threshold);
-
-click_starts = [];
-
-% Assume there was no onset right before the start of the file
-debounce_start = nan;
-
-while true
-    % Eliminate any following onsets that are within the debounce time
-    click_ons(click_ons < (debounce_start + debounce_samples)) = [];
-    % Stop loop if we're out of onsets
-    if isempty(click_ons)
-        break;
-    end
-    % Record next onset
-    click_starts(end+1) = click_ons(1); %#ok<*AGROW>
-    % Reset debounce time
-    debounce_start = click_ons(1);
-end
-
 onsets = [];
 offsets = [];
 
+switch options.PulseShape
+    case 'level'
+        % Directly-recorded sync signal (e.g. the DAQ wired straight to the
+        %   LED power): each pulse is a single sustained "high" level lasting
+        %   ~pulse_time. The onset is the rising edge of that level, validated
+        %   by a matching falling edge ~pulse_time later. This is the same
+        %   model used for the video sync flashes in findSyncFlashOnsets.
+        level = abs(audio) > threshold;
+        % Rising and falling threshold crossings, debounced to collapse any
+        %   chatter around each edge into a single event.
+        click_starts = debounceEdges(find(diff(level) > 0), debounce_samples, nan);
+        click_ends = debounceEdges(find(diff(level) < 0), debounce_samples, 0);
+
+        for k = 1:length(click_starts)
+            % A pulse's falling edge must come before the next pulse's onset
+            if k < length(click_starts)
+                possible_ends = click_ends(click_ends < click_starts(k+1));
+            else
+                possible_ends = click_ends;
+            end
+            % Keep this onset only if a falling edge lands ~pulse_time later
+            predicted_end = click_starts(k) + pulse_samples;
+            matching_ends = possible_ends( ...
+                floor(predicted_end - pulse_tolerance_samples) <= possible_ends & ...
+                possible_ends <= ceil(predicted_end + pulse_tolerance_samples));
+            if ~isempty(matching_ends)
+                onsets(end+1) = click_starts(k) + 1; %#ok<*AGROW>
+                offsets(end+1) = matching_ends(1);
+            end
+        end
+
+    case 'pair'
+        % Legacy relay setup: each sync pulse produces two brief transient
+        %   clicks (relay closing, then opening) separated by ~pulse_time,
+        %   recorded acoustically by a microphone. Pair consecutive clicks
+        %   that are separated by the expected pulse time.
+        click_ons = find(abs(audio) > threshold);
+        click_starts = [];
+        % Assume there was no onset right before the start of the file
+        debounce_start = nan;
+        while true
+            % Eliminate any following onsets that are within the debounce time
+            click_ons(click_ons < (debounce_start + debounce_samples)) = [];
+            % Stop loop if we're out of onsets
+            if isempty(click_ons)
+                break;
+            end
+            % Record next onset
+            click_starts(end+1) = click_ons(1);
+            % Reset debounce time
+            debounce_start = click_ons(1);
+        end
+
+        % Look for onset/offset click pairs in click_starts. They only count
+        %   as a pair if they are separated within tolerance by the pulse time.
+        for k = 1:length(click_starts)-1
+            separation = click_starts(k+1) - click_starts(k);
+            if abs(separation - pulse_samples) < pulse_tolerance_samples
+                % This is a pulse on/off pair of clicks
+                onsets(end+1) = click_starts(k);
+                offsets(end+1) = click_starts(k+1);
+            end
+        end
+end
+
 if options.PlotOnsets
-    figure; 
+    figure;
     ax = axes();
-    hold(ax, "on");
-end
-
-% Look for onset/offset click pairs in click_starts. They only count as a
-%   pair if they are separated within tolerance by the given pulse time.
-for k = 1:length(click_starts)-1
-    separation = click_starts(k+1) - click_starts(k);
-    if abs(separation - pulse_samples) < pulse_tolerance_samples
-        % This is a pulse on/off pair of clicks
-        onsets(end+1) = click_starts(k);
-        offsets(end+1) = click_starts(k+1);
-        if options.PlotOnsets
-            plot(ax, [click_starts(k)/fs, click_starts(k+1)/fs], [audio(click_starts(k)), audio(click_starts(k))], 'g-');
-        end
-    else
-        if options.PlotOnsets
-            plot(ax, [click_starts(k)/fs, click_starts(k+1)/fs], [audio(click_starts(k)), audio(click_starts(k))], 'r-');
-        end
-    end
-end
-
-if options.PlotOnsets
+    hold(ax, 'on');
     plot(ax, (1:length(audio)) / fs, audio, 'k');
     for onset = onsets
         plot(ax, onset/fs, 0, 'g*');
@@ -167,4 +199,20 @@ if ~isempty(options.NextAudio)
     in_range = onsets <= num_samples;
     onsets = onsets(in_range);
     offsets = offsets(in_range);
+end
+
+function kept = debounceEdges(edges, debounce_samples, initial_debounce_start)
+% Collapse threshold-crossing chatter: walk the (sorted) edge sample indices,
+%   keeping each edge and discarding any that follow within debounce_samples.
+%   initial_debounce_start is the reference before the first edge: use NaN to
+%   always keep the first edge, or 0 to discard edges in the first window.
+kept = [];
+debounce_start = initial_debounce_start;
+while true
+    edges(edges < (debounce_start + debounce_samples)) = [];
+    if isempty(edges)
+        break;
+    end
+    kept(end+1) = edges(1);
+    debounce_start = edges(1);
 end
