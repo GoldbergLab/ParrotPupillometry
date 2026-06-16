@@ -76,8 +76,12 @@ if isempty(sync_struct)
                  'found in %s.'], options.WebcamFileRegex, data_root);
         end
         middle_file = webcam_files{ceil(numel(webcam_files) / 2)};
-        fprintf('Select the webcam sync ROI (press ''r'' then drag, close window to accept):\n  %s\n', middle_file);
+        fprintf('Select the webcam sync ROI (press ''r'' then drag; Accept or Cancel):\n  %s\n', middle_file);
         roi_browser = VideoROI(middle_file);
+        if isempty(roi_browser.ROI)
+            error('postProcessPupilRigData:roiSelectionCancelled', ...
+                'Webcam ROI selection was cancelled - aborting.');
+        end
         options.WebcamROI = roi_browser.ROI;
         fprintf('Selected webcam ROI: [%d %d %d %d]\n', options.WebcamROI);
     end
