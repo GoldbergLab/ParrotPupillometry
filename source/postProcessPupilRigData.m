@@ -22,6 +22,13 @@ arguments
     options.WebcamFileRegex {mustBeText} = 'webcam.*\.avi'
     options.AudioFileRegex {mustBeText} = '.*\.wav'
     options.AudioPulseShape {mustBeMember(options.AudioPulseShape, {'level', 'pair'})} = 'level'
+    options.AudioThreshold = 0.01
+    options.NaneyeThreshold = 0.5
+    options.NaneyeRangeBasedThreshold = true
+    options.NaneyeMedianWindow = 20
+    options.WebcamThreshold = 0.5
+    options.WebcamRangeBasedThreshold = true
+    options.WebcamMedianWindow = 20
     options.InsetNaneyeInWebcam = false
     options.InsetScale (1, 1) double = 0.35
 end
@@ -76,7 +83,7 @@ if isempty(sync_struct)
                  'found in %s.'], options.WebcamFileRegex, data_root);
         end
         middle_file = webcam_files{ceil(numel(webcam_files) / 2)};
-        fprintf('Select the webcam sync ROI (press ''r'' then drag; Accept or Cancel):\n  %s\n', middle_file);
+        fprintf('Select the webcam sync ROI (click and drag; Accept or Cancel):\n  %s\n', middle_file);
         roi_browser = VideoROI(middle_file);
         if isempty(roi_browser.ROI)
             error('postProcessPupilRigData:roiSelectionCancelled', ...
@@ -84,6 +91,36 @@ if isempty(sync_struct)
         end
         options.WebcamROI = roi_browser.ROI;
         fprintf('Selected webcam ROI: [%d %d %d %d]\n', options.WebcamROI);
+    end
+
+    % If requested, pick the naneye flash ROI(s) interactively. The naneye
+    %   video holds the two stacked eyes, so with DualNaneyeSync there are two
+    %   ROIs - one per eye - each drawn on that eye's half of the stacked frame.
+    if options.IncludeNaneye && istext(options.NaneyeROI) && strcmpi(options.NaneyeROI, 'GUI')
+        naneye_files = findPaths(data_root, options.NaneyeFileRegex, 'SearchSubdirectories', false);
+        if isempty(naneye_files)
+            error('postProcessPupilRigData:noNaneyeFilesForGUI', ...
+                ['NaneyeROI was ''GUI'', but no naneye files matching ''%s'' were ' ...
+                 'found in %s.'], options.NaneyeFileRegex, data_root);
+        end
+        middle_file = naneye_files{ceil(numel(naneye_files) / 2)};
+        if options.DualNaneyeSync
+            num_eyes = 2;
+        else
+            num_eyes = 1;
+        end
+        naneye_roi = zeros(num_eyes, 4);
+        for eye_idx = 1:num_eyes
+            fprintf('Select naneye sync ROI for eye %d of %d (draw on that eye''s half of the stacked frame):\n  %s\n', eye_idx, num_eyes, middle_file);
+            roi_browser = VideoROI(middle_file, 'Title', sprintf('Draw sync ROI for naneye eye %d of %d', eye_idx, num_eyes));
+            if isempty(roi_browser.ROI)
+                error('postProcessPupilRigData:roiSelectionCancelled', ...
+                    'Naneye ROI selection was cancelled - aborting.');
+            end
+            naneye_roi(eye_idx, :) = roi_browser.ROI;
+            fprintf('Selected naneye eye %d ROI: [%d %d %d %d]\n', eye_idx, naneye_roi(eye_idx, :));
+        end
+        options.NaneyeROI = naneye_roi;
     end
 
     % options.SyncStruct is still empty - generate it from scratch
@@ -106,7 +143,14 @@ if isempty(sync_struct)
         'NaneyeFileRegex', options.NaneyeFileRegex, ...
         'WebcamFileRegex', options.WebcamFileRegex, ...
         'AudioFileRegex', options.AudioFileRegex, ...
-        'AudioPulseShape', options.AudioPulseShape ...
+        'AudioPulseShape', options.AudioPulseShape, ...
+        'AudioThreshold', options.AudioThreshold, ...
+        'NaneyeThreshold', options.NaneyeThreshold, ...
+        'NaneyeRangeBasedThreshold', options.NaneyeRangeBasedThreshold, ...
+        'NaneyeMedianWindow', options.NaneyeMedianWindow, ...
+        'WebcamThreshold', options.WebcamThreshold, ...
+        'WebcamRangeBasedThreshold', options.WebcamRangeBasedThreshold, ...
+        'WebcamMedianWindow', options.WebcamMedianWindow ...
         );
 end
 
