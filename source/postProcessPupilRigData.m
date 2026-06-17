@@ -73,8 +73,9 @@ elseif istext(options.SyncStruct)
 end
 
 if isempty(sync_struct)
-    % If requested, pick the webcam ROI interactively from a video in the
-    %   middle of the stream (where the rig is most likely settled and lit).
+    % If requested, pick the webcam ROI interactively. selectROIsFromVideos
+    %   starts from a video in the middle of the stream and, if the chosen video
+    %   has no sync flash, offers to try the next one.
     if options.IncludeWebcam && istext(options.WebcamROI) && strcmpi(options.WebcamROI, 'GUI')
         webcam_files = findPaths(data_root, options.WebcamFileRegex, 'SearchSubdirectories', false);
         if isempty(webcam_files)
@@ -82,20 +83,15 @@ if isempty(sync_struct)
                 ['WebcamROI was ''GUI'', but no webcam files matching ''%s'' were ' ...
                  'found in %s.'], options.WebcamFileRegex, data_root);
         end
-        middle_file = webcam_files{ceil(numel(webcam_files) / 2)};
-        fprintf('Select the webcam sync ROI (click and drag; Accept or Cancel):\n  %s\n', middle_file);
-        roi_browser = VideoROI(middle_file);
-        if isempty(roi_browser.ROI)
-            error('postProcessPupilRigData:roiSelectionCancelled', ...
-                'Webcam ROI selection was cancelled - aborting.');
-        end
-        options.WebcamROI = roi_browser.ROI;
+        options.WebcamROI = selectROIsFromVideos(webcam_files, 1, 'webcam');
         fprintf('Selected webcam ROI: [%d %d %d %d]\n', options.WebcamROI);
     end
 
-    % If requested, pick the naneye flash ROI(s) interactively. The naneye
-    %   video holds the two stacked eyes, so with DualNaneyeSync there are two
-    %   ROIs - one per eye - each drawn on that eye's half of the stacked frame.
+    % If requested, pick the naneye flash ROI(s) interactively. The naneye video
+    %   holds the two stacked eyes, so with DualNaneyeSync there are two ROIs -
+    %   one per eye - each drawn on that eye's half of the stacked frame. Not
+    %   every naneye file contains a flash (the period is ~10 s), so
+    %   selectROIsFromVideos offers to try the next video if needed.
     if options.IncludeNaneye && istext(options.NaneyeROI) && strcmpi(options.NaneyeROI, 'GUI')
         naneye_files = findPaths(data_root, options.NaneyeFileRegex, 'SearchSubdirectories', false);
         if isempty(naneye_files)
@@ -103,20 +99,12 @@ if isempty(sync_struct)
                 ['NaneyeROI was ''GUI'', but no naneye files matching ''%s'' were ' ...
                  'found in %s.'], options.NaneyeFileRegex, data_root);
         end
-        middle_file = naneye_files{ceil(numel(naneye_files) / 2)};
         if options.DualNaneyeSync
             num_eyes = 2;
         else
             num_eyes = 1;
         end
-        fprintf('Select %d naneye sync ROI(s) - one per eye, on each eye''s half of the stacked frame:\n  %s\n', num_eyes, middle_file);
-        roi_browser = VideoROI(middle_file, 'NumROIs', num_eyes, ...
-            'Title', sprintf('Draw %d naneye sync ROI(s), one per eye', num_eyes));
-        naneye_roi = roi_browser.ROI;
-        if isempty(naneye_roi) || size(naneye_roi, 1) < num_eyes
-            error('postProcessPupilRigData:roiSelectionCancelled', ...
-                'Naneye ROI selection was cancelled or incomplete - aborting.');
-        end
+        naneye_roi = selectROIsFromVideos(naneye_files, num_eyes, 'naneye');
         if num_eyes == 2
             % Assign ROIs to eyes by vertical position rather than draw order:
             %   the upper ROI (smaller center y) is eye 0 (top half of the
@@ -171,3 +159,36 @@ alignVideosToAudio(sync_struct, align_root, ...
     'InsetNaneyeInWebcam', options.InsetNaneyeInWebcam, ...
     'InsetScale', options.InsetScale ...
     );
+
+function rois = selectROIsFromVideos(files, num_rois, stream_name)
+% Collect num_rois ROIs with VideoROI, starting from a video in the middle of
+%   the list. If the user closes the dialog without a complete set of ROIs (for
+%   example because the chosen video does not contain a sync flash), ask whether
+%   to abort or try the next video. Tries each video at most once, wrapping
+%   around from the middle. Returns a num_rois x 4 matrix, or errors if the user
+%   aborts or every video has been tried without a complete selection.
+num_files = numel(files);
+start_idx = ceil(num_files / 2);
+% Order of videos to try: middle first, then forward, wrapping around
+order = mod((start_idx - 1) + (0:num_files - 1), num_files) + 1;
+for k = 1:num_files
+    video_file = files{order(k)};
+    fprintf('Select %d %s sync ROI(s) (click and drag; Accept or Cancel):\n  %s\n', ...
+        num_rois, stream_name, video_file);
+    roi_browser = VideoROI(video_file, 'NumROIs', num_rois, ...
+        'Title', sprintf('Draw %d %s sync ROI(s)', num_rois, stream_name));
+    rois = roi_browser.ROI;
+    if ~isempty(rois) && size(rois, 1) == num_rois
+        return
+    end
+    answer = questdlg(sprintf(['No complete %s ROI selection was made. This video may ' ...
+        'not contain a sync flash. Try the next video, or abort?'], stream_name), ...
+        'No ROI selected', 'Try next video', 'Abort', 'Try next video');
+    if ~strcmp(answer, 'Try next video')
+        error('postProcessPupilRigData:roiSelectionCancelled', ...
+            '%s ROI selection was aborted.', stream_name);
+    end
+end
+error('postProcessPupilRigData:noFlashVideoFound', ...
+    'Tried all %d %s videos without a complete ROI selection. Aborting.', ...
+    num_files, stream_name);
