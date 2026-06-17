@@ -70,6 +70,8 @@ elseif istext(options.SyncStruct)
             rethrow(ME);
         end
     end
+elseif isstruct(options.SyncStruct) && ~isempty(options.SyncStruct)
+    sync_struct = options.SyncStruct;
 end
 
 if isempty(sync_struct)
