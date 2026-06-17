@@ -109,18 +109,26 @@ if isempty(sync_struct)
         else
             num_eyes = 1;
         end
-        naneye_roi = zeros(num_eyes, 4);
-        for eye_idx = 1:num_eyes
-            fprintf('Select naneye sync ROI for eye %d of %d (draw on that eye''s half of the stacked frame):\n  %s\n', eye_idx, num_eyes, middle_file);
-            roi_browser = VideoROI(middle_file, 'Title', sprintf('Draw sync ROI for naneye eye %d of %d', eye_idx, num_eyes));
-            if isempty(roi_browser.ROI)
-                error('postProcessPupilRigData:roiSelectionCancelled', ...
-                    'Naneye ROI selection was cancelled - aborting.');
-            end
-            naneye_roi(eye_idx, :) = roi_browser.ROI;
-            fprintf('Selected naneye eye %d ROI: [%d %d %d %d]\n', eye_idx, naneye_roi(eye_idx, :));
+        fprintf('Select %d naneye sync ROI(s) - one per eye, on each eye''s half of the stacked frame:\n  %s\n', num_eyes, middle_file);
+        roi_browser = VideoROI(middle_file, 'NumROIs', num_eyes, ...
+            'Title', sprintf('Draw %d naneye sync ROI(s), one per eye', num_eyes));
+        naneye_roi = roi_browser.ROI;
+        if isempty(naneye_roi) || size(naneye_roi, 1) < num_eyes
+            error('postProcessPupilRigData:roiSelectionCancelled', ...
+                'Naneye ROI selection was cancelled or incomplete - aborting.');
+        end
+        if num_eyes == 2
+            % Assign ROIs to eyes by vertical position rather than draw order:
+            %   the upper ROI (smaller center y) is eye 0 (top half of the
+            %   stacked frame), the lower one is eye 1 (bottom half).
+            roi_center_y = naneye_roi(:, 2) + naneye_roi(:, 4) / 2;
+            [~, top_to_bottom] = sort(roi_center_y);
+            naneye_roi = naneye_roi(top_to_bottom, :);
         end
         options.NaneyeROI = naneye_roi;
+        for eye_idx = 1:num_eyes
+            fprintf('  naneye eye %d ROI: [%d %d %d %d]\n', eye_idx - 1, naneye_roi(eye_idx, :));
+        end
     end
 
     % options.SyncStruct is still empty - generate it from scratch
